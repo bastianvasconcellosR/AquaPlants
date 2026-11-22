@@ -309,7 +309,7 @@ const ENT = {
   umbrales: { titulo: 'Umbrales', ruta: '/umbrales', cols: [['id_sistema', 'Sistema'], ['variable', 'Variable'], ['minimo', 'Mínimo'], ['maximo', 'Máximo']], sinBorrar: true },
   respaldos: { titulo: 'Respaldos', ruta: '/respaldos', cols: [['creado_en', 'Fecha'], ['tipo', 'Tipo'], ['archivo', 'Archivo'], ['tamano', 'Tamaño (B)'], ['estado', 'Estado']], solo: true },
 };
-let adminTab = 'usuarios', adminDatos = {};
+let adminTab = 'usuarios', adminDatos = {}, adminVerElim = false;
 
 async function vAdmin() {
   const m = $('#contenido');
@@ -334,11 +334,16 @@ async function adminTabla() {
       if (mapa[k]) v = mapa[k][v] ?? v;
       return esc(v ?? '—');
     };
-    body.innerHTML = `<div class="row">${ent.solo ? '<button class="btn" data-x="resp">Crear respaldo ahora</button>' : '<button class="btn" data-x="nuevo">Nuevo</button>'}</div>
-      ${filas.length ? `<div class="table-wrap"><table><thead><tr>${ent.cols.map(c => `<th>${c[1]}</th>`).join('')}${ent.solo ? '' : '<th></th>'}</tr></thead><tbody>
-      ${filas.map(f => `<tr>${ent.cols.map(c => `<td>${celda(f, c[0])}</td>`).join('')}${ent.solo ? '' : `<td style="white-space:nowrap"><button class="btn sec sm" data-x="edit" data-id="${f.id}">Editar</button>
+    const tieneActivo = ent.cols.some(c => c[0] === 'activo');
+    const visibles = (tieneActivo && !adminVerElim) ? filas.filter(f => f.activo) : filas;
+    body.innerHTML = `<div class="row">${ent.solo ? '<button class="btn" data-x="resp">Crear respaldo ahora</button>' : '<button class="btn" data-x="nuevo">Nuevo</button>'}
+      ${tieneActivo ? `<label class="inline"><input type="checkbox" id="a-verelim" ${adminVerElim ? 'checked' : ''}> Mostrar eliminados</label>` : ''}</div>
+      ${visibles.length ? `<div class="table-wrap"><table><thead><tr>${ent.cols.map(c => `<th>${c[1]}</th>`).join('')}${ent.solo ? '' : '<th></th>'}</tr></thead><tbody>
+      ${visibles.map(f => `<tr>${ent.cols.map(c => `<td>${celda(f, c[0])}</td>`).join('')}${ent.solo ? '' : `<td style="white-space:nowrap"><button class="btn sec sm" data-x="edit" data-id="${f.id}">Editar</button>
         ${!ent.sinBorrar && f.activo ? ` <button class="btn sec sm" data-x="del" data-id="${f.id}">Eliminar</button>` : ''}${adminTab === 'dispositivos' ? ` <button class="btn sec sm" data-x="key" data-id="${f.id}">Regenerar clave</button>` : ''}</td>`}</tr>`).join('')}
       </tbody></table></div>` : vacio('Sin registros.')}`;
+    const ck = $('#a-verelim');
+    if (ck) ck.addEventListener('change', () => { adminVerElim = ck.checked; adminTabla(); });
   } catch (e) { body.innerHTML = errorBox(e.message); }
 }
 

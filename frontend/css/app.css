@@ -51,3 +51,5 @@ code.key{display:block;word-break:break-all;background:#F0F0F0;padding:8px;borde
 
 @media print { .top, .noimp, .bar, #toast { display: none !important; } body { background: #fff; } .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; } }
 #i-body h2{margin-top:24px}
+
+label.inline{display:inline-flex;flex-direction:row;align-items:center;gap:6px;margin-left:12px;font-size:14px}label.inline input{width:auto}

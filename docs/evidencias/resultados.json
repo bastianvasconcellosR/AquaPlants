@@ -1,5 +1,5 @@
 {
-  "fecha": "2026-11-22T16:58:40",
+  "fecha": "2026-11-22T20:45:14",
   "api": [
     {
       "id": "PI-01",
@@ -38,7 +38,7 @@
       "cu": "CU09",
       "descripcion": "Medición válida se guarda con su marca de tiempo y aparece en el histórico",
       "esperado": "201; el histórico trae 1 punto con ese valor y esa marca",
-      "obtenido": "201; total=1 punto=[{'t': '2026-11-22T19:56:38Z', 'v': 6.2}]",
+      "obtenido": "201; total=1 punto=[{'t': '2026-11-22T23:43:10Z', 'v': 6.2}]",
       "estado": "Aprobado"
     },
     {
@@ -46,7 +46,7 @@
       "cu": "CU09",
       "descripcion": "Sin marca de tiempo, el servidor asigna la hora actual",
       "esperado": "marca dentro de los últimos 30 s",
-      "obtenido": "2026-11-22T19:57:38Z",
+      "obtenido": "2026-11-22T23:44:10Z",
       "estado": "Aprobado"
     },
     {
@@ -262,7 +262,7 @@
       "cu": "CU07",
       "descripcion": "CRUD de sistema y cultivo (crear, leer, editar, desactivar) con validaciones",
       "esperado": "201, 200, nombre editado, 201; cultivo con sistema inexistente 422; fecha mal formada 422; baja lógica (el registro permanece con activo=false)",
-      "obtenido": "201, 200, «Sistema 6db8a2 editado», 201; 422; 422; baja=200 activo=False",
+      "obtenido": "201, 200, «Sistema 74a3ff editado», 201; 422; 422; baja=200 activo=False",
       "estado": "Aprobado"
     },
     {
@@ -318,7 +318,7 @@
       "cu": "CU13",
       "descripcion": "Respaldo manual: se genera, queda en el historial; solo Administrador",
       "esperado": "201 estado Completo con tamaño > 0; aparece en el listado; Supervisor 403",
-      "obtenido": "201 {'id': 1, 'archivo': 'respaldo_20261122_195726.sqlite', 'tamano': 311296, 'estado': 'Completo'}; en listado=True; sup=403",
+      "obtenido": "201 {'id': 1, 'archivo': 'respaldo_20261122_234358.sqlite', 'tamano': 311296, 'estado': 'Completo'}; en listado=True; sup=403",
       "estado": "Aprobado"
     },
     {
@@ -326,7 +326,7 @@
       "cu": "—",
       "descripcion": "Endpoint de salud (usado por el despliegue)",
       "esperado": "200 con base de datos ok",
-      "obtenido": "200 {'estado': 'ok', 'base_de_datos': 'ok', 'hora': '2026-11-22T19:57:26Z'}",
+      "obtenido": "200 {'estado': 'ok', 'base_de_datos': 'ok', 'hora': '2026-11-22T23:43:58Z'}",
       "estado": "Aprobado"
     },
     {
@@ -430,7 +430,7 @@
       "cu": "CU06",
       "descripcion": "Contraseñas y API Keys no se almacenan ni se devuelven en claro",
       "esperado": "la API no devuelve campos hash/clave/key; BD con hash de contraseñas y SHA-256 de la API Key (no la clave)",
-      "obtenido": "campos filtrados=[]; ejemplo hash=scrypt$iChB5Ts…; hash key len=64",
+      "obtenido": "campos filtrados=[]; ejemplo hash=scrypt$vvS+GjE…; hash key len=64",
       "estado": "Aprobado"
     },
     {
@@ -607,7 +607,7 @@
       "id": "PM-06",
       "descripcion": "Histórico: gráfico dibujado con estadísticas; el Encargado no ve «Exportar CSV»",
       "esperado": "canvas con píxeles dibujados, 4 tarjetas de estadísticas y sin botón CSV",
-      "obtenido": "píxeles=175805, csv visible=false",
+      "obtenido": "píxeles=175851, csv visible=false",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-06-historico.png"
     },
@@ -623,7 +623,7 @@
       "id": "PM-08",
       "descripcion": "Pérdida de conexión del navegador con la API: aviso claro, sin pantalla en blanco",
       "esperado": "mensaje «Sin conexión con el servidor…» y/o error legible",
-      "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (22-11-26, 4:57:53 p. m.). Reintentando…",
+      "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (22-11-26, 8:44:27 p. m.). Reintentando…",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-08-sin-conexion.png"
     },
@@ -655,7 +655,7 @@
       "id": "PM-12",
       "descripcion": "Respaldo manual desde la UI",
       "esperado": "aparece una fila «manual» con estado Completo",
-      "obtenido": " 22-11-26, 4:57:57 p. m.manualrespaldo_20261122_195757.sqlite311296Completo ",
+      "obtenido": " 22-11-26, 8:44:31 p. m.manualrespaldo_20261122_234431.sqlite311296Completo ",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-12-respaldos.png"
     },
@@ -671,7 +671,7 @@
       "id": "PM-15",
       "descripcion": "Informe de gestión visible desde la interfaz (Administrador/Supervisor)",
       "esperado": "aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas",
-      "obtenido": "Período: 21-11-26, 4:57:59 p. m. a 22-11-26, 4:57:59 p. m. · Generado por Administrador el 22-11-26, 4:57:59 p",
+      "obtenido": "Período: 21-11-26, 8:44:33 p. m. a 22-11-26, 8:44:33 p. m. · Generado por Administrador el 22-11-26, 8:44:33 p",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-15-informe-gestion.png"
     },
@@ -693,19 +693,19 @@
     "detalle_errores": [],
     "ingesta": {
       "n": 4000,
-      "media_ms": 34.1,
-      "p50_ms": 6.3,
-      "p95_ms": 154.7,
-      "p99_ms": 243.8,
-      "max_ms": 448.5
+      "media_ms": 42.0,
+      "p50_ms": 6.1,
+      "p95_ms": 208.5,
+      "p99_ms": 356.7,
+      "max_ms": 661.5
     },
     "dashboard": {
       "n": 400,
-      "media_ms": 56.4,
-      "p50_ms": 57.4,
-      "p95_ms": 82.3,
-      "p99_ms": 101.1,
-      "max_ms": 108.5
+      "media_ms": 70.3,
+      "p50_ms": 73.1,
+      "p95_ms": 92.4,
+      "p99_ms": 97.4,
+      "max_ms": 98.8
     },
     "cumple": true
   }

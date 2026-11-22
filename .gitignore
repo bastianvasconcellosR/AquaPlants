@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+.env
+demo_keys.json
+respaldos/
+node_modules/
+.pytest_cache/
