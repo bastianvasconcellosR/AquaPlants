@@ -1,0 +1,122 @@
+[
+  {
+    "id": "PM-01",
+    "descripcion": "Login con credenciales erróneas muestra mensaje claro y no ingresa",
+    "esperado": "mensaje «Correo o contraseña incorrectos»; sigue en el login",
+    "obtenido": "Correo o contraseña incorrectos",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-01-login-error.png"
+  },
+  {
+    "id": "PM-02",
+    "descripcion": "Login correcto del Encargado: menú acorde al rol (sin Administración)",
+    "esperado": "ve Estado, Alertas, Históricos, Bitácora; no ve Administración",
+    "obtenido": "Estado actual, Alertas, Históricos, Bitácora",
+    "estado": "Aprobado",
+    "evidencia": ""
+  },
+  {
+    "id": "PM-03",
+    "descripcion": "Dashboard muestra última lectura, rango, condición y conexión del dispositivo",
+    "esperado": "UI-001 «En línea», pH 6.2 Normal, temperatura 22.5 Normal",
+    "obtenido": "",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-03-dashboard.png"
+  },
+  {
+    "id": "PM-05",
+    "descripcion": "Resolver alerta sin causa: el formulario lo impide con mensaje",
+    "esperado": "mensaje indicando que la causa es obligatoria",
+    "obtenido": "El campo «Causa o solución aplicada» es obligatorio.",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-05-resolver-sin-causa.png"
+  },
+  {
+    "id": "PM-04",
+    "descripcion": "Alerta fuera de umbral: aparece Pendiente, se toma (En proceso) y se resuelve con causa",
+    "esperado": "Pendiente visible → En proceso → Resuelta con la causa registrada",
+    "obtenido": "pendiente visible=true, en proceso=true, resuelta con causa=true",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-04b-alerta-resuelta.png"
+  },
+  {
+    "id": "PM-06",
+    "descripcion": "Histórico: gráfico dibujado con estadísticas; el Encargado no ve «Exportar CSV»",
+    "esperado": "canvas con píxeles dibujados, 4 tarjetas de estadísticas y sin botón CSV",
+    "obtenido": "píxeles=175805, csv visible=false",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-06-historico.png"
+  },
+  {
+    "id": "PM-07",
+    "descripcion": "Texto con HTML/JavaScript en la bitácora se muestra como texto y no se ejecuta (XSS)",
+    "esperado": "se ve el texto literal; ningún script se ejecuta",
+    "obtenido": "literal visible=true, ejecuciones=0",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-07-xss.png"
+  },
+  {
+    "id": "PM-08",
+    "descripcion": "Pérdida de conexión del navegador con la API: aviso claro, sin pantalla en blanco",
+    "esperado": "mensaje «Sin conexión con el servidor…» y/o error legible",
+    "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (22-11-26, 4:57:53 p. m.). Reintentando…",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-08-sin-conexion.png"
+  },
+  {
+    "id": "PM-09",
+    "descripcion": "Token inválido/expirado: vuelve al login sin quedarse en pantalla rota",
+    "esperado": "se muestra el formulario de login",
+    "obtenido": "login visible=true",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-09-sesion-expirada.png"
+  },
+  {
+    "id": "PM-10",
+    "descripcion": "Administrador crea dispositivo en la UI: la API Key se muestra una sola vez y no queda en la tabla",
+    "esperado": "aparece diálogo con clave aq_…; luego el listado muestra el dispositivo sin la clave",
+    "obtenido": "clave mostrada=true, en tabla=false, dispositivo listado=true",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-10-api-key.png"
+  },
+  {
+    "id": "PM-11",
+    "descripcion": "Umbral con mínimo mayor que máximo: la API lo rechaza y la UI informa el motivo",
+    "esperado": "mensaje de error visible (mínimo debe ser menor que máximo)",
+    "obtenido": "Datos inválidos: cuerpo – el mínimo debe ser menor que el máximo",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-11-validacion-umbral.png"
+  },
+  {
+    "id": "PM-12",
+    "descripcion": "Respaldo manual desde la UI",
+    "esperado": "aparece una fila «manual» con estado Completo",
+    "obtenido": " 22-11-26, 4:57:57 p. m.manualrespaldo_20261122_195757.sqlite311296Completo ",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-12-respaldos.png"
+  },
+  {
+    "id": "PM-13",
+    "descripcion": "Vista móvil (390 px): sin desplazamiento horizontal de la página",
+    "esperado": "scrollWidth ≤ clientWidth",
+    "obtenido": "desborde=0px",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-13-movil.png"
+  },
+  {
+    "id": "PM-15",
+    "descripcion": "Informe de gestión visible desde la interfaz (Administrador/Supervisor)",
+    "esperado": "aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas",
+    "obtenido": "Período: 21-11-26, 4:57:59 p. m. a 22-11-26, 4:57:59 p. m. · Generado por Administrador el 22-11-26, 4:57:59 p",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-15-informe-gestion.png"
+  },
+  {
+    "id": "PM-14",
+    "descripcion": "Accesibilidad básica del login: orden de tabulación y campos etiquetados",
+    "esperado": "Tab recorre correo → contraseña; ambos inputs dentro de <label>",
+    "obtenido": "l-email → l-clave; etiquetados=true",
+    "estado": "Aprobado",
+    "evidencia": ""
+  }
+]

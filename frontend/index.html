@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AquaPlants | AquaBrain</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="bar"></div>
+
+<section id="vista-login" hidden>
+  <div class="login"><form class="card" id="form-login" novalidate>
+    <div class="brand"><span class="sq"></span>AquaPlants <small>| AquaBrain</small></div>
+    <h1>Iniciar sesión</h1>
+    <label>Correo electrónico<input id="l-email" type="email" autocomplete="username" required></label>
+    <label>Contraseña<input id="l-clave" type="password" autocomplete="current-password" required></label>
+    <div id="l-error" class="msg error" role="alert" hidden></div>
+    <button class="btn" type="submit">Ingresar</button>
+    <span class="hint">Acceso solo para personal autorizado. La sesión caduca a los 60 minutos.</span>
+  </form></div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand"><span class="sq"></span>AquaPlants <small>| Panel de monitoreo</small></div>
+    <nav class="tabs" id="nav" aria-label="Navegación principal"></nav>
+    <div class="user"><span id="usuario-info"></span> <button class="btn sec sm" id="btn-salir">Salir</button></div>
+  </header>
+  <main id="contenido" tabindex="-1"></main>
+</div>
+
+<dialog id="dlg"><form method="dialog" id="dlg-form" novalidate>
+  <h2 id="dlg-titulo"></h2>
+  <div id="dlg-campos" class="campos"></div>
+  <div id="dlg-error" class="msg error" role="alert" hidden></div>
+  <div class="row end"><button type="button" class="btn sec" id="dlg-cancel">Cancelar</button><button class="btn" id="dlg-ok" type="submit">Guardar</button></div>
+</form></dialog>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="js/api.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

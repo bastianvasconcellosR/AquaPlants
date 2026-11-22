@@ -1,0 +1,26 @@
+# Entorno local completo con PostgreSQL:  docker compose up --build
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: aquaplants
+      POSTGRES_USER: aqua
+      POSTGRES_PASSWORD: aqua_local_pw
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aqua -d aquaplants"]
+      interval: 5s
+      retries: 10
+  app:
+    build: .
+    depends_on:
+      db: {condition: service_healthy}
+    ports: ["8000:8000"]
+    environment:
+      APP_ENV: prod
+      DATABASE_URL: postgresql://aqua:aqua_local_pw@db:5432/aquaplants
+      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto-local-0123456789abcdef}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-AdminLocal2026x}
+      SEED_DEMO: "1"
+volumes:
+  pgdata:

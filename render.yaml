@@ -1,0 +1,26 @@
+# Despliegue en Render (https://render.com) con "Blueprint": New + > Blueprint > selecciona este repositorio.
+databases:
+  - name: aquaplants-db
+    plan: free
+    databaseName: aquaplants
+    user: aquaplants
+
+services:
+  - type: web
+    name: aquaplants
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aquaplants-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false          # la ingresas tú en el panel de Render (no queda en el repositorio)
+      - key: SEED_DEMO
+        value: "1"
