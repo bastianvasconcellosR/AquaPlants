@@ -1,0 +1,75 @@
+== Tablas creadas
+ tablas 
+--------
+     11
+(1 row)
+
+== Carga: 100 sensores x 3000 mediciones = 300.000 filas
+ mediciones 
+------------
+     300000
+(1 row)
+
+== Consulta histórico (sensor + rango): debe usar el índice único (id_sensor, marca_tiempo)
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Sort (actual rows=1439 loops=1)
+   Sort Key: marca_tiempo
+   Sort Method: quicksort  Memory: 105kB
+   ->  Bitmap Heap Scan on medicion (actual rows=1439 loops=1)
+         Recheck Cond: ((id_sensor = 7) AND (marca_tiempo >= (now() - '24:00:00'::interval)) AND (marca_tiempo <= now()))
+         Heap Blocks: exact=1058
+         ->  Bitmap Index Scan on uq_medicion_sensor_ts (actual rows=1439 loops=1)
+               Index Cond: ((id_sensor = 7) AND (marca_tiempo >= (now() - '24:00:00'::interval)) AND (marca_tiempo <= now()))
+ Planning Time: 0.185 ms
+ Execution Time: 1.976 ms
+(10 rows)
+
+== Última lectura por sensor (subconsulta del dashboard)
+                                        QUERY PLAN                                         
+-------------------------------------------------------------------------------------------
+ Limit (actual rows=1 loops=1)
+   ->  Index Scan Backward using uq_medicion_sensor_ts on medicion (actual rows=1 loops=1)
+         Index Cond: (id_sensor = 7)
+ Planning Time: 0.064 ms
+ Execution Time: 0.016 ms
+(5 rows)
+
+== Mediciones de todos los sensores en una ventana de tiempo (índice ix_medicion_marca_tiempo)
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Aggregate (actual rows=1 loops=1)
+   ->  Index Only Scan using ix_medicion_marca_tiempo on medicion (actual rows=2900 loops=1)
+         Index Cond: (marca_tiempo >= (now() - '00:30:00'::interval))
+         Heap Fetches: 2900
+ Planning Time: 0.052 ms
+ Execution Time: 0.341 ms
+(6 rows)
+
+== Alertas abiertas por estado y fecha (índice ix_alerta_estado_creada)
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
+ Limit (actual rows=50 loops=1)
+   ->  Index Scan Backward using ix_alerta_estado_creada on alerta (actual rows=50 loops=1)
+         Index Cond: ((estado)::text = 'Pendiente'::text)
+ Planning Time: 0.160 ms
+ Execution Time: 0.032 ms
+(5 rows)
+
+== Restricciones: cada intento debe fallar
+psql:/tmp/pgd/val.sql:24: ERROR:  duplicate key value violates unique constraint "uq_medicion_sensor_ts"
+DETAIL:  Key (id_sensor, marca_tiempo)=(1, 2026-11-02 10:40:20.016833-03) already exists.
+psql:/tmp/pgd/val.sql:25: ERROR:  new row for relation "umbral" violates check constraint "ck_umbral_rango"
+DETAIL:  Failing row contains (1, 1, ph, 7, 6).
+psql:/tmp/pgd/val.sql:26: ERROR:  new row for relation "alerta" violates check constraint "ck_alerta_estado"
+DETAIL:  Failing row contains (20001, 1, null, null, umbral, x, m, null, Inventado, null, 2026-11-02 10:41:24.105156-03, null, null).
+psql:/tmp/pgd/val.sql:27: ERROR:  duplicate key value violates unique constraint "uq_sensor_disp_var"
+DETAIL:  Key (id_dispositivo, variable)=(1, ph) already exists.
+psql:/tmp/pgd/val.sql:28: ERROR:  update or delete on table "sistema" violates foreign key constraint "dispositivo_id_sistema_fkey" on table "dispositivo"
+DETAIL:  Key (id)=(1) is still referenced from table "dispositivo".
+psql:/tmp/pgd/val.sql:29: ERROR:  insert or update on table "sensor" violates foreign key constraint "sensor_id_dispositivo_fkey"
+DETAIL:  Key (id_dispositivo)=(99999) is not present in table "dispositivo".
+
+== Índices únicos parciales de alertas abiertas (comprobación adicional, esquema final)
+Una alerta de umbral abierta por sensor: el 2.º INSERT con ON CONFLICT DO NOTHING no inserta fila; tras resolver la primera,
+un nuevo INSERT sí se acepta (ver resultado: ids 1 y 3 existen; el intento intermedio fue descartado).

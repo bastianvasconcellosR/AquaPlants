@@ -1,0 +1,25 @@
+{
+  "duracion_s": 40.0,
+  "solicitudes": 4400,
+  "throughput_rps": 109.9,
+  "errores": 0,
+  "tasa_error_pct": 0.0,
+  "detalle_errores": [],
+  "ingesta": {
+    "n": 4000,
+    "media_ms": 42.0,
+    "p50_ms": 6.1,
+    "p95_ms": 208.5,
+    "p99_ms": 356.7,
+    "max_ms": 661.5
+  },
+  "dashboard": {
+    "n": 400,
+    "media_ms": 70.3,
+    "p50_ms": 73.1,
+    "p95_ms": 92.4,
+    "p99_ms": 97.4,
+    "max_ms": 98.8
+  },
+  "cumple": true
+}
