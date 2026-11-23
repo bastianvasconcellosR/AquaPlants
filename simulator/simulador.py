@@ -23,6 +23,7 @@ import random
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 PERFIL = {  # variable: (centro, amplitud de oscilación normal, dispositivo)
@@ -147,50 +148,78 @@ def main():
     forzado = ESCENARIOS[a.escenario]
     buffer = {c: [] for c in claves}
     ignoradas = set()   # (dispositivo, variable) que la API informó como no registradas: no se vuelven a enviar
-    anomalia = {}   # (dispositivo, variable) -> [ciclos restantes, valor fuera de rango]
-    i = 0
-    while a.ciclos == 0 or i < a.ciclos:
-        i += 1
-        # el escenario "corte" deja sin red --ciclos-corte ciclos (desde el 2.º) y luego reconecta
-        sin_red = a.escenario == "corte" and 2 <= i <= 1 + a.ciclos_corte
-        ahora = datetime.now(timezone.utc)
-        cortados = dispositivos_cortados(a.archivo_corte)
-        for cod, clave in claves.items():
-            for var, (centro, amp) in PERFIL.get(cod, PERFIL_GENERICO).items():
-                if (cod, var) in ignoradas:
-                    continue
-                valor = lectura(cod, var, centro, amp, i, forzado)
-                if a.escenario == "aleatorio":
-                    k = (cod, var)
-                    if k not in anomalia and random.random() < a.prob:
-                        anomalia[k] = [random.randint(2, 4), random.choice(FUERA[var])]
-                        print(f"[{iso(ahora)}] {cod}: anomalía espontánea en {var} ({anomalia[k][1]}) durante {anomalia[k][0]} ciclos")
-                    if k in anomalia:
-                        valor = anomalia[k][1]
-                        anomalia[k][0] -= 1
-                        if anomalia[k][0] <= 0:
-                            del anomalia[k]
-                buffer[cod].append({"variable": var, "valor": valor, "marca_tiempo": iso(ahora)})
-            pend = buffer[cod]
-            corte_manual = bool(cortados) and ("*" in cortados or cod.upper() in cortados)
-            if sin_red or corte_manual:
-                print(f"[{iso(ahora)}] {cod}: SIN RED – {len(pend)} lecturas en búfer local")
+    anomalia = {}       # (dispositivo, variable) -> [ciclos restantes, valor fuera de rango]
+    conocidos = set()   # dispositivos cuyas variables ya se validaron con un primer envío individual
+    url = a.url
+
+    def ciclo(cod, clave, i, ahora, sin_red, cortados):
+        """Un ciclo de un dispositivo: genera sus lecturas y las envía en UN solo lote (o las guarda si no hay red)."""
+        out = []
+        for var, (centro, amp) in PERFIL.get(cod, PERFIL_GENERICO).items():
+            if (cod, var) in ignoradas:
                 continue
-            if len(pend) > 2 * len(PERFIL.get(cod, PERFIL_GENERICO)):   # hay acumuladas: envío por lote
-                st, r = enviar(a.url, clave, "/mediciones/lote", {"mediciones": pend[:500]})
-                print(f"[{iso(ahora)}] {cod}: lote de {len(pend[:500])} -> HTTP {st} {r}")
-                if st in (200, 201, 422):
-                    del pend[:500]
-                continue
+            valor = lectura(cod, var, centro, amp, i, forzado)
+            if a.escenario == "aleatorio":
+                k = (cod, var)
+                if k not in anomalia and random.random() < a.prob:
+                    anomalia[k] = [random.randint(2, 4), random.choice(FUERA[var])]
+                    out.append(f"[{iso(ahora)}] {cod}: anomalía espontánea en {var} ({anomalia[k][1]}) durante {anomalia[k][0]} ciclos")
+                if k in anomalia:
+                    valor = anomalia[k][1]
+                    anomalia[k][0] -= 1
+                    if anomalia[k][0] <= 0:
+                        del anomalia[k]
+            buffer[cod].append({"variable": var, "valor": valor, "marca_tiempo": iso(ahora)})
+        pend = buffer[cod]
+        corte_manual = bool(cortados) and ("*" in cortados or cod.upper() in cortados)
+        if sin_red or corte_manual:
+            out.append(f"[{iso(ahora)}] {cod}: SIN RED – {len(pend)} lecturas en búfer local")
+            return out
+        if cod not in conocidos:   # primer contacto: envío individual para aprender qué variables mide este dispositivo
             for m in list(pend):
-                st, r = enviar(a.url, clave, "/mediciones", m)
-                if st == 422 and "sensor activo" in str(r):   # el dispositivo no mide esta variable: se aprende y se omite
+                st, r = enviar(url, clave, "/mediciones", m)
+                if st == 422 and "sensor activo" in str(r):
                     ignoradas.add((cod, m["variable"])); pend.remove(m); continue
-                print(f"[{iso(ahora)}] {cod} {m['variable']}={m['valor']} -> HTTP {st} {r if st >= 400 or r.get('alerta') else ''}")
+                out.append(f"[{iso(ahora)}] {cod} {m['variable']}={m['valor']} -> HTTP {st} {r if st >= 400 or r.get('alerta') else ''}")
                 if st in (201, 409, 422):
                     pend.remove(m)
-        if a.ciclos == 0 or i < a.ciclos:
-            time.sleep(a.intervalo)
+            conocidos.add(cod)
+            return out
+        lote = pend[:500]
+        if not lote:
+            return out
+        st, r = enviar(url, clave, "/mediciones/lote", {"mediciones": lote})
+        if st == 422 and "sensor activo" in str(r):   # cambió la configuración del dispositivo: se vuelve a aprender
+            conocidos.discard(cod)
+            out.append(f"[{iso(ahora)}] {cod}: la API rechazó una variable; se revalidan sus sensores")
+            return out
+        vals = ", ".join(f"{m['variable']}={m['valor']}" for m in lote[-len(PERFIL.get(cod, PERFIL_GENERICO)):])
+        cola = f" · alertas nuevas: {r['alertas']}" if st < 400 and r.get("alertas") else (f" {r}" if st >= 400 else "")
+        nv = len(PERFIL.get(cod, PERFIL_GENERICO))
+        if len(lote) > nv:   # había lecturas acumuladas de un corte: reenvío por lote
+            out.append(f"[{iso(ahora)}] {cod}: lote de {len(lote)} lecturas acumuladas (recuperación tras el corte) -> HTTP {st}{cola}")
+        else:
+            out.append(f"[{iso(ahora)}] {cod}: {len(lote)} lecturas en un lote ({vals}) -> HTTP {st}{cola}")
+        if st in (200, 201, 422):
+            del pend[:500]
+        return out
+
+    i = 0
+    with ThreadPoolExecutor(max_workers=max(1, len(claves))) as pool:
+        while a.ciclos == 0 or i < a.ciclos:
+            i += 1
+            t0 = time.time()
+            # el escenario "corte" deja sin red --ciclos-corte ciclos (desde el 2.º) y luego reconecta
+            sin_red = a.escenario == "corte" and 2 <= i <= 1 + a.ciclos_corte
+            ahora = datetime.now(timezone.utc)
+            cortados = dispositivos_cortados(a.archivo_corte)
+            # todos los dispositivos envían a la vez (como equipos independientes), no uno detrás de otro
+            futuros = [pool.submit(ciclo, cod, clave, i, ahora, sin_red, cortados) for cod, clave in claves.items()]
+            for f in futuros:
+                for linea in f.result():
+                    print(linea, flush=True)
+            if a.ciclos == 0 or i < a.ciclos:
+                time.sleep(max(0.0, a.intervalo - (time.time() - t0)))
 
 
 if __name__ == "__main__":

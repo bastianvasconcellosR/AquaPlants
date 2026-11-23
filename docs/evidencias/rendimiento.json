@@ -7,19 +7,19 @@
   "detalle_errores": [],
   "ingesta": {
     "n": 4000,
-    "media_ms": 42.0,
-    "p50_ms": 6.9,
-    "p95_ms": 200.4,
-    "p99_ms": 351.7,
-    "max_ms": 778.6
+    "media_ms": 42.8,
+    "p50_ms": 7.2,
+    "p95_ms": 205.5,
+    "p99_ms": 356.1,
+    "max_ms": 566.5
   },
   "dashboard": {
     "n": 400,
-    "media_ms": 70.9,
-    "p50_ms": 73.0,
-    "p95_ms": 98.1,
-    "p99_ms": 125.5,
-    "max_ms": 128.9
+    "media_ms": 75.5,
+    "p50_ms": 79.2,
+    "p95_ms": 99.7,
+    "p99_ms": 105.6,
+    "max_ms": 107.3
   },
   "cumple": true
 }
