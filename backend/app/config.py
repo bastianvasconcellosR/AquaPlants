@@ -7,7 +7,8 @@ import os
 import secrets
 
 # Si es una URL postgresql:// se usa PostgreSQL (nube); si no, SQLite local.
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./aquaplants.db")
+# DB_EXTERNA_URL (opcional) tiene prioridad: permite apuntar a otra base (p. ej. Google Cloud SQL) sin tocar el Blueprint; al quitarla se vuelve a DATABASE_URL.
+DATABASE_URL = os.getenv("DB_EXTERNA_URL") or os.getenv("DATABASE_URL", "sqlite:///./aquaplants.db")
 
 # Render entrega "postgres://", psycopg2 espera "postgresql://".
 if DATABASE_URL.startswith("postgres://"):
