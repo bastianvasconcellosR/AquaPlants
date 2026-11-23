@@ -8,6 +8,7 @@ Solo usa la biblioteca estándar.
 Ejemplos:
   python simulador.py --url http://localhost:8000 --clave AB-001=aq_1_xxxx --clave AB-002=aq_2_xxxx
   python simulador.py --escenario ph_alto --ciclos 3
+  python simulador.py --escenario aleatorio --intervalo 10 --prob 0.03   # operación continua con alertas espontáneas
   python simulador.py --escenario corte --ciclos 6      # simula caída de red y reenvío por lote
   python simulador.py --escenario corte --ciclos 30 --ciclos-corte 20 --intervalo 5   # corte de ~100 s: dispara la alerta de desconexión
   python simulador.py --clave-archivo demo_keys.json --intervalo 5
@@ -34,7 +35,11 @@ ESCENARIOS = {
     "ec_baja": {"conductividad_ec": 0.4},
     "dato_erroneo": {"ph": 99.0},  # fuera del rango físico: la API debe rechazarlo
     "corte": {},  # sin anomalía en valores; el corte se simula en la red
+    "aleatorio": {},  # operación normal con anomalías espontáneas (ver --prob): alertas "reales" que nadie programó
 }
+# Valores fuera de rango (por debajo o por encima de los umbrales de demostración) para las anomalías aleatorias
+FUERA = {"ph": (5.0, 7.7), "temperatura_agua": (15.0, 29.5), "caudal": (0.2, 6.0),
+         "conductividad_ec": (0.5, 3.0), "humedad_ambiente": (30.0, 92.0)}
 
 
 def iso(dt):
@@ -68,6 +73,7 @@ def main():
     ap.add_argument("--escenario", choices=ESCENARIOS, default="normal")
     ap.add_argument("--intervalo", type=float, default=30, help="segundos entre lecturas (por defecto 30)")
     ap.add_argument("--ciclos", type=int, default=0, help="0 = infinito")
+    ap.add_argument("--prob", type=float, default=0.03, help="escenario aleatorio: probabilidad por ciclo y variable de iniciar una anomalía (por defecto 0.03)")
     ap.add_argument("--ciclos-corte", type=int, default=3, help="escenario corte: cuántos ciclos seguidos (desde el 2.º) sin red")
     a = ap.parse_args()
 
@@ -82,6 +88,8 @@ def main():
 
     forzado = ESCENARIOS[a.escenario]
     buffer = {c: [] for c in claves}
+    ignoradas = set()   # (dispositivo, variable) que la API informó como no registradas: no se vuelven a enviar
+    anomalia = {}   # (dispositivo, variable) -> [ciclos restantes, valor fuera de rango]
     i = 0
     while a.ciclos == 0 or i < a.ciclos:
         i += 1
@@ -90,8 +98,20 @@ def main():
         ahora = datetime.now(timezone.utc)
         for cod, clave in claves.items():
             for var, (centro, amp) in PERFIL.get(cod, PERFIL_GENERICO).items():
-                buffer[cod].append({"variable": var, "valor": lectura(cod, var, centro, amp, i, forzado),
-                                    "marca_tiempo": iso(ahora)})
+                if (cod, var) in ignoradas:
+                    continue
+                valor = lectura(cod, var, centro, amp, i, forzado)
+                if a.escenario == "aleatorio":
+                    k = (cod, var)
+                    if k not in anomalia and random.random() < a.prob:
+                        anomalia[k] = [random.randint(2, 4), random.choice(FUERA[var])]
+                        print(f"[{iso(ahora)}] {cod}: anomalía espontánea en {var} ({anomalia[k][1]}) durante {anomalia[k][0]} ciclos")
+                    if k in anomalia:
+                        valor = anomalia[k][1]
+                        anomalia[k][0] -= 1
+                        if anomalia[k][0] <= 0:
+                            del anomalia[k]
+                buffer[cod].append({"variable": var, "valor": valor, "marca_tiempo": iso(ahora)})
             pend = buffer[cod]
             if sin_red:
                 print(f"[{iso(ahora)}] {cod}: SIN RED – {len(pend)} lecturas en búfer local")
@@ -104,6 +124,8 @@ def main():
                 continue
             for m in list(pend):
                 st, r = enviar(a.url, clave, "/mediciones", m)
+                if st == 422 and "sensor activo" in str(r):   # el dispositivo no mide esta variable: se aprende y se omite
+                    ignoradas.add((cod, m["variable"])); pend.remove(m); continue
                 print(f"[{iso(ahora)}] {cod} {m['variable']}={m['valor']} -> HTTP {st} {r if st >= 400 or r.get('alerta') else ''}")
                 if st in (201, 409, 422):
                     pend.remove(m)

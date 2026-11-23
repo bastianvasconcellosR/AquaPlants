@@ -8,7 +8,7 @@ const VARIABLES = { ph: 'pH', temperatura_agua: 'Temperatura del agua', caudal: 
 const nombreVar = (v) => VARIABLES[v] || v;
 
 let usuario = null, vista = null, timerEstado = null, ultimoEstado = null;
-const POLL_MS = 30000;
+const POLL_MS = 10000;
 
 /* ---------- utilidades de interfaz ---------- */
 function toast(msg, error = false) {
@@ -129,7 +129,7 @@ function irA(v) {
 /* ================= CU02 Estado actual ================= */
 async function vEstado() {
   const m = $('#contenido');
-  m.innerHTML = `<h1>Estado actual</h1><p class="sub">Última lectura de cada sensor. Se actualiza solo cada 30 segundos.</p><div id="aviso"></div><div id="kpis"></div><div id="gestion"></div><div id="devs">${cargando()}</div>`;
+  m.innerHTML = `<h1>Estado actual</h1><p class="sub">Última lectura de cada sensor. Se actualiza solo cada 10 segundos.</p><div id="aviso"></div><div id="kpis"></div><div id="gestion"></div><div id="devs">${cargando()}</div>`;
   const pintar = (est, fallo) => {
     ultimoEstado = est;
     $('#aviso').innerHTML = fallo ? `<div class="msg error" role="alert">Sin conexión con el servidor. Se muestran los últimos datos recibidos (${esc(fmtFecha(est.generado_en))}). Reintentando…</div>` : '';
