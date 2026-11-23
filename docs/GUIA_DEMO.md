@@ -17,3 +17,13 @@ Antes: la app en la nube abierta y "despierta" (ver `DESPLIEGUE.md`), simulador 
 | 11 | Seguridad | Mostrar `docs/REGISTRO_PRUEBAS.md` (PS-01..14) | 401/403/423/429, inyección SQL rechazada, XSS escapado |
 
 Tip: `python simulator/simulador.py ... --escenario ph_alto --ciclos 2` deja una alerta crítica Pendiente lista para el paso 5.
+
+## Simulador: modo continuo y corte manual de un dispositivo
+
+- **Todos los dispositivos a la vez, con alertas espontáneas** (regenera la clave de cada dispositivo):
+  `python simulator\simulador.py --url URL --todos --admin-clave CLAVE --escenario aleatorio --intervalo 10`
+- **Pérdida de conexión a propósito**, mientras el simulador corre (en otra ventana, en la misma carpeta):
+  `echo AB-003> corte.txt` → AB-003 deja de enviar y guarda las lecturas en un búfer local; a los 90 s la app lo marca
+  *Sin conexión* y genera la alerta de desconexión.
+  `del corte.txt` → AB-003 se reconecta y **reenvía por lote** lo acumulado con su hora original: el histórico no pierde datos.
+- Un `corte.txt` vacío corta a todos los dispositivos.

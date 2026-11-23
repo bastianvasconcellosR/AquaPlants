@@ -139,7 +139,7 @@ async function vEstado() {
       <div class="card kpi" style="margin:0"><span>Alertas pendientes</span><b style="color:${est.alertas_pendientes ? 'var(--bad)' : 'inherit'}">${est.alertas_pendientes}</b></div>
       <div class="card kpi" style="margin:0"><span>Alertas en proceso</span><b>${est.alertas_en_proceso}</b></div></div>`;
     $('#devs').innerHTML = est.dispositivos.length ? est.dispositivos.map(d => `
-      <div class="card"><div class="dev-head"><div><strong>${esc(d.nombre)}</strong> <span class="hint">${esc(d.codigo)} · ${esc(d.sistema)}</span></div>
+      <div class="card"><div class="dev-head"><div><strong>${esc(d.nombre)}</strong> <span class="hint">${esc(d.codigo)} · ${esc(d.sistema)}</span><div class="hint">Cultivos: ${(d.cultivos || []).length ? esc(d.cultivos.join(', ')) : 'sin cultivos asociados'}</div></div>
         <div>${d.conexion === 'en línea' ? badge('En línea', 'b-ok') : badge('Sin conexión', 'b-bad')} <span class="hint">última comunicación ${esc(hace(d.ultima_comunicacion))}</span></div></div>
         <div class="table-wrap"><table><thead><tr><th>Variable</th><th>Valor</th><th>Rango permitido</th><th>Condición</th><th>Medido</th></tr></thead><tbody>
         ${d.sensores.map(s => `<tr><td>${esc(nombreVar(s.variable))}</td><td class="sensor-val">${s.valor ?? '—'} <span class="hint">${esc(s.unidad)}</span></td>
@@ -184,9 +184,9 @@ async function vAlertas(filtro = '') {
   $('#f-est').addEventListener('change', (e) => vAlertas(e.target.value));
   try {
     const as = await API.get('/alertas' + (filtro ? '?estado=' + encodeURIComponent(filtro) : ''));
-    $('#lista').innerHTML = as.length ? `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Severidad</th><th>Dispositivo</th><th>Detalle</th><th>Estado</th><th>Causa / solución</th><th></th></tr></thead><tbody>
+    $('#lista').innerHTML = as.length ? `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Severidad</th><th>Dispositivo</th><th>Cultivos afectados</th><th>Detalle</th><th>Estado</th><th>Causa / solución</th><th></th></tr></thead><tbody>
       ${as.map(a => `<tr class="sev-${esc(a.severidad)}"><td>${esc(fmtFecha(a.creada_en))}</td><td>${badge(a.severidad, a.severidad === 'Crítica' ? 'b-bad' : 'b-warn')}</td>
-      <td>${esc(a.dispositivo)}</td><td>${esc(a.mensaje)}</td>
+      <td>${esc(a.dispositivo)}</td><td class="hint">${esc((a.cultivos || []).join(', ') || '—')}</td><td>${esc(a.mensaje)}</td>
       <td>${badge(a.estado, a.estado === 'Resuelta' ? 'b-ok' : a.estado === 'Pendiente' ? 'b-bad' : 'b-warn')}</td><td>${esc(a.causa || '—')}</td>
       <td style="white-space:nowrap">${a.estado === 'Pendiente' ? `<button class="btn sec sm" data-a="proc" data-id="${a.id}">Tomar</button> ` : ''}${a.estado !== 'Resuelta' ? `<button class="btn sm" data-a="res" data-id="${a.id}">Resolver</button>` : ''}</td></tr>`).join('')}
       </tbody></table></div>` : vacio('No hay alertas para este filtro.');
@@ -279,6 +279,8 @@ async function vInforme() {
         ${r.dispositivos.map(d => `<tr><td>${esc(d.codigo)} · ${esc(d.nombre)}</td><td>${esc(d.sistema)}</td><td>${esc((r.por_dispositivo.find(p => p.dispositivo === d.codigo) || {}).mediciones ?? 0)}</td><td>${esc(fmtFecha(d.ultima_comunicacion))}</td></tr>`).join('')}</tbody></table></div>
         <h2>4. Alertas del período</h2>${r.alertas.length ? `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Dispositivo</th><th>Severidad</th><th>Detalle</th><th>Estado</th><th>Causa</th></tr></thead><tbody>
         ${r.alertas.map(a => `<tr><td>${esc(fmtFecha(a.creada_en))}</td><td>${esc(a.dispositivo)}</td><td>${esc(a.severidad)}</td><td>${esc(a.mensaje)}</td><td>${esc(a.estado)}</td><td>${esc(a.causa ?? '—')}</td></tr>`).join('')}</tbody></table></div>` : vacio('Sin alertas en el período.')}
+        <h2>5. Cultivos y su operación</h2><p class="sub" style="margin-top:0">Cada cultivo recibe las mediciones y alertas de los dispositivos de su sistema.</p>${(r.por_cultivo || []).length ? `<div class="table-wrap"><table><thead><tr><th>Cultivo</th><th>Especie</th><th>Sistema</th><th>Dispositivos</th><th>Mediciones</th><th>Alertas</th><th>Abiertas</th><th>Bitácora</th></tr></thead><tbody>
+        ${r.por_cultivo.map(c => `<tr><td>${esc(c.cultivo)}</td><td class="hint">${esc(c.especie || '—')}</td><td>${esc(c.sistema)}</td><td>${esc(c.dispositivos)}</td><td>${esc(c.mediciones)}</td><td>${esc(c.alertas)}</td><td>${esc(c.alertas_abiertas)}</td><td>${esc(c.registros_bitacora)}</td></tr>`).join('')}</tbody></table></div>` : vacio('Sin cultivos activos.')}
         <p class="sub">Registros de bitácora agrícola en el período: ${esc(x.registros_bitacora_agricola)}.</p></div>`;
     } catch (e) { $('#i-body').innerHTML = errorBox(e.message); }
   };

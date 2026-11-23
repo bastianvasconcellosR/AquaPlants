@@ -430,7 +430,7 @@ def alertas_listar(request):
     except ValueError:
         return error(422, "limite debe ser un entero")
     sql = """SELECT a.id, a.tipo, a.severidad, a.mensaje, a.valor, a.estado, a.causa, a.creada_en, a.actualizada_en,
-                    d.codigo AS dispositivo, s.variable
+                    d.codigo AS dispositivo, d.id_sistema, s.variable
              FROM alerta a JOIN dispositivo d ON d.id = a.id_dispositivo LEFT JOIN sensor s ON s.id = a.id_sensor"""
     params = []
     if estado:
@@ -439,7 +439,14 @@ def alertas_listar(request):
     sql += " ORDER BY a.creada_en DESC, a.id DESC LIMIT ?"
     params.append(limite)
     with db.connect() as c:
-        return ok([_limpiar(f) for f in c.all(sql, params)])
+        filas = c.all(sql, params)
+        cult = services.cultivos_por_sistema(c)
+    salida = []
+    for f in filas:
+        f = _limpiar(f)
+        f["cultivos"] = cult.get(f.pop("id_sistema", None), [])   # cultivos del sistema donde está el dispositivo
+        salida.append(f)
+    return ok(salida)
 
 
 @ruta("/alertas/{id:int}", "PATCH", *TODOS)
@@ -536,7 +543,7 @@ def informe_gestion(request):
     """Resumen ejecutivo del período: operación, calidad de datos, alertas y desempeño por dispositivo."""
     _, desde, hasta = _filtro_hist(request)
     with db.connect() as c:
-        disp = c.all("SELECT d.id, d.codigo, d.nombre, d.ultima_comunicacion, s.nombre AS sistema "
+        disp = c.all("SELECT d.id, d.codigo, d.nombre, d.ultima_comunicacion, d.id_sistema, s.nombre AS sistema "
                      "FROM dispositivo d JOIN sistema s ON s.id = d.id_sistema WHERE d.activo = ? ORDER BY d.id", (True,))
         limite = db.utcnow() - timedelta(seconds=config.OFFLINE_SEGUNDOS)
         en_linea = sum(1 for d in disp if d["ultima_comunicacion"] and db.parse_iso(db.iso(d["ultima_comunicacion"])) >= limite)
@@ -559,6 +566,19 @@ def informe_gestion(request):
             "ORDER BY a.creada_en DESC, a.id DESC", (desde, hasta))
         abiertas = c.one("SELECT COUNT(*) AS n FROM alerta WHERE estado <> 'Resuelta'")["n"]
         eventos = c.one("SELECT COUNT(*) AS n FROM evento_bitacora WHERE categoria = 'agricola' AND creado_en >= ? AND creado_en <= ?", (desde, hasta))["n"]
+        cultivos = c.all("SELECT cu.id, cu.nombre, cu.especie, cu.fecha_inicio, cu.id_sistema, s.nombre AS sistema "
+                         "FROM cultivo cu JOIN sistema s ON s.id = cu.id_sistema WHERE cu.activo = ? ORDER BY cu.id", (True,))
+        med_sis = {f["id_sistema"]: f["n"] for f in c.all(
+            "SELECT d.id_sistema, COUNT(m.id) AS n FROM dispositivo d JOIN sensor se ON se.id_dispositivo = d.id "
+            "JOIN medicion m ON m.id_sensor = se.id AND m.marca_tiempo >= ? AND m.marca_tiempo <= ? "
+            "GROUP BY d.id_sistema", (desde, hasta))}
+        ale_sis = {f["id_sistema"]: f for f in c.all(
+            "SELECT d.id_sistema, COUNT(a.id) AS n, SUM(CASE WHEN a.estado <> 'Resuelta' THEN 1 ELSE 0 END) AS abiertas "
+            "FROM alerta a JOIN dispositivo d ON d.id = a.id_dispositivo "
+            "WHERE a.creada_en >= ? AND a.creada_en <= ? GROUP BY d.id_sistema", (desde, hasta))}
+        bit_cul = {f["id_cultivo"]: f["n"] for f in c.all(
+            "SELECT id_cultivo, COUNT(*) AS n FROM evento_bitacora WHERE categoria = 'agricola' AND id_cultivo IS NOT NULL "
+            "AND creado_en >= ? AND creado_en <= ? GROUP BY id_cultivo", (desde, hasta))}
         services.auditar(c, request.state.usuario, "informe_gestion", f"{desde}..{hasta}")
     tiempos = []
     for a in alertas:
@@ -589,6 +609,12 @@ def informe_gestion(request):
         "por_dispositivo": [{"dispositivo": d["codigo"], "mediciones": d["n"]} for d in por_disp],
         "dispositivos": [{"codigo": d["codigo"], "nombre": d["nombre"], "sistema": d["sistema"], "ultima_comunicacion": db.iso(d["ultima_comunicacion"])} for d in disp],
         "alertas": [_limpiar(a) for a in alertas[:30]],
+        "por_cultivo": [{"cultivo": cu["nombre"], "especie": cu["especie"], "sistema": cu["sistema"],
+                         "dispositivos": sum(1 for d in disp if d["id_sistema"] == cu["id_sistema"]),
+                         "mediciones": int(med_sis.get(cu["id_sistema"], 0)),
+                         "alertas": int((ale_sis.get(cu["id_sistema"]) or {}).get("n") or 0),
+                         "alertas_abiertas": int((ale_sis.get(cu["id_sistema"]) or {}).get("abiertas") or 0),
+                         "registros_bitacora": int(bit_cul.get(cu["id"], 0))} for cu in cultivos],
     })
 
 

@@ -12,6 +12,9 @@ Ejemplos:
   python simulador.py --escenario corte --ciclos 6      # simula caída de red y reenvío por lote
   python simulador.py --escenario corte --ciclos 30 --ciclos-corte 20 --intervalo 5   # corte de ~100 s: dispara la alerta de desconexión
   python simulador.py --clave-archivo demo_keys.json --intervalo 5
+  python simulador.py --todos --admin-clave TU_CLAVE --escenario aleatorio --intervalo 10   # todos los dispositivos
+  Corte manual durante la ejecución:  echo AB-003> corte.txt   (AB-003 pierde la conexión)
+                                      del corte.txt             (se reconecta y reenvía lo acumulado por lote)
 """
 import argparse
 import json
@@ -59,6 +62,52 @@ def enviar(url, clave, ruta, cuerpo, timeout=8):
             return e.code, {}
 
 
+def llamar(url, metodo, ruta, cuerpo=None, token=None, timeout=15):
+    h = {"Content-Type": "application/json"}
+    if token:
+        h["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(url + "/api/v1" + ruta, method=metodo, headers=h,
+                                 data=json.dumps(cuerpo).encode() if cuerpo is not None else None)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"null")
+        except ValueError:
+            return e.code, None
+
+
+def claves_de_todos(url, email, clave):
+    """Modo --todos: inicia sesión como Administrador y obtiene una clave nueva para cada dispositivo activo.
+    Ojo: regenerar revoca la clave anterior de cada dispositivo."""
+    st, js = llamar(url, "POST", "/auth/login", {"email": email, "clave": clave})
+    if st != 200:
+        raise SystemExit(f"No se pudo iniciar sesión como {email}: HTTP {st} {js}")
+    token = js["token"]
+    claves = {}
+    for d in (llamar(url, "GET", "/dispositivos", token=token)[1] or []):
+        if not d.get("activo", True):
+            continue
+        st, r = llamar(url, "POST", f"/dispositivos/{d['id']}/regenerar-clave", token=token)
+        if st in (200, 201):
+            claves[d["codigo"]] = r["api_key"]
+        else:
+            print(f"  {d['codigo']}: no se pudo regenerar la clave (HTTP {st})")
+    return claves
+
+
+def dispositivos_cortados(ruta):
+    """Corte manual: si existe el archivo, los códigos que contiene (separados por espacio, coma o línea) quedan sin red;
+    un archivo vacío corta a todos. Al borrar el archivo, el dispositivo se reconecta y reenvía lo acumulado por lote."""
+    try:
+        txt = open(ruta, encoding="utf-8", errors="ignore").read()
+    except OSError:
+        return None
+    codigos = {x.strip().upper() for x in txt.replace(",", " ").split() if x.strip()}
+    return codigos or {"*"}
+
+
 def lectura(cod, var, centro, amp, i, forzado):
     if var in forzado:   # el escenario aplica a esa variable en cualquier dispositivo que la tenga
         return forzado[var]
@@ -74,6 +123,10 @@ def main():
     ap.add_argument("--intervalo", type=float, default=30, help="segundos entre lecturas (por defecto 30)")
     ap.add_argument("--ciclos", type=int, default=0, help="0 = infinito")
     ap.add_argument("--prob", type=float, default=0.03, help="escenario aleatorio: probabilidad por ciclo y variable de iniciar una anomalía (por defecto 0.03)")
+    ap.add_argument("--todos", action="store_true", help="obtiene una clave nueva para TODOS los dispositivos (requiere --admin-clave) y los simula a todos; revoca las claves anteriores")
+    ap.add_argument("--admin-email", default="admin@aquaplants.cl")
+    ap.add_argument("--admin-clave", help="contraseña del Administrador (solo para --todos)")
+    ap.add_argument("--archivo-corte", default="corte.txt", help="corte manual: si este archivo existe, los dispositivos que nombra (o todos si está vacío) quedan sin red hasta que se borre (por defecto corte.txt)")
     ap.add_argument("--ciclos-corte", type=int, default=3, help="escenario corte: cuántos ciclos seguidos (desde el 2.º) sin red")
     a = ap.parse_args()
 
@@ -83,8 +136,13 @@ def main():
     for kv in a.clave:
         k, v = kv.split("=", 1)
         claves[k] = v
+    if a.todos:
+        if not a.admin_clave:
+            ap.error("--todos necesita --admin-clave")
+        claves.update(claves_de_todos(a.url.rstrip("/"), a.admin_email, a.admin_clave))
+        print("Dispositivos simulados:", ", ".join(sorted(claves)))
     if not claves:
-        ap.error("falta al menos una API Key (--clave o --clave-archivo)")
+        ap.error("falta al menos una API Key (--clave, --clave-archivo o --todos)")
 
     forzado = ESCENARIOS[a.escenario]
     buffer = {c: [] for c in claves}
@@ -96,6 +154,7 @@ def main():
         # el escenario "corte" deja sin red --ciclos-corte ciclos (desde el 2.º) y luego reconecta
         sin_red = a.escenario == "corte" and 2 <= i <= 1 + a.ciclos_corte
         ahora = datetime.now(timezone.utc)
+        cortados = dispositivos_cortados(a.archivo_corte)
         for cod, clave in claves.items():
             for var, (centro, amp) in PERFIL.get(cod, PERFIL_GENERICO).items():
                 if (cod, var) in ignoradas:
@@ -113,7 +172,8 @@ def main():
                             del anomalia[k]
                 buffer[cod].append({"variable": var, "valor": valor, "marca_tiempo": iso(ahora)})
             pend = buffer[cod]
-            if sin_red:
+            corte_manual = bool(cortados) and ("*" in cortados or cod.upper() in cortados)
+            if sin_red or corte_manual:
                 print(f"[{iso(ahora)}] {cod}: SIN RED – {len(pend)} lecturas en búfer local")
                 continue
             if len(pend) > 2 * len(PERFIL.get(cod, PERFIL_GENERICO)):   # hay acumuladas: envío por lote

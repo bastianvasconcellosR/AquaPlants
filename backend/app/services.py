@@ -121,12 +121,21 @@ def recibir_lote(c, disp, lote):
 
 
 # ---------------------------------------------------------------- estado del dashboard
+def cultivos_por_sistema(c):
+    """{id_sistema: [nombres de cultivos activos]}: relaciona cada cultivo con los dispositivos y alertas de su sistema."""
+    r = {}
+    for f in c.all("SELECT id_sistema, nombre FROM cultivo WHERE activo = ? ORDER BY id", (True,)):
+        r.setdefault(f["id_sistema"], []).append(f["nombre"])
+    return r
+
+
 def estado(c):
     ahora = db.utcnow()
     limite = ahora - timedelta(seconds=config.OFFLINE_SEGUNDOS)
-    disps = c.all("""SELECT d.id, d.codigo, d.nombre, d.ultima_comunicacion, s.nombre AS sistema
+    disps = c.all("""SELECT d.id, d.codigo, d.nombre, d.ultima_comunicacion, d.id_sistema, s.nombre AS sistema
                      FROM dispositivo d JOIN sistema s ON s.id = d.id_sistema
                      WHERE d.activo = ? ORDER BY d.id""", (True,))
+    cult_sis = cultivos_por_sistema(c)
     sensores = c.all("""
         SELECT se.id, se.id_dispositivo, se.variable, se.unidad, d.id_sistema,
                (SELECT m.valor FROM medicion m WHERE m.id_sensor = se.id ORDER BY m.marca_tiempo DESC LIMIT 1) AS valor,
@@ -152,7 +161,7 @@ def estado(c):
                          "minimo": u["minimo"] if u else None, "maximo": u["maximo"] if u else None})
         salida.append({"id": d["id"], "codigo": d["codigo"], "nombre": d["nombre"], "sistema": d["sistema"],
                        "conexion": "en línea" if online else "sin conexión", "ultima_comunicacion": uc,
-                       "sensores": sens})
+                       "cultivos": cult_sis.get(d["id_sistema"], []), "sensores": sens})
     pend = c.one("SELECT COUNT(*) AS n FROM alerta WHERE estado = 'Pendiente'")["n"]
     proc = c.one("SELECT COUNT(*) AS n FROM alerta WHERE estado = 'En proceso'")["n"]
     return {"generado_en": db.to_iso(ahora), "dispositivos": salida,
