@@ -50,7 +50,8 @@ def iso(dt):
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def enviar(url, clave, ruta, cuerpo, timeout=8):
+def enviar(url, clave, ruta, cuerpo, timeout=30):
+    """Devuelve (estado HTTP, cuerpo). Estado 0 = sin respuesta (red caída, timeout): el dispositivo conserva la lectura y reintenta."""
     req = urllib.request.Request(url + "/api/v1" + ruta, data=json.dumps(cuerpo).encode(), method="POST",
                                  headers={"Content-Type": "application/json", "X-API-Key": clave})
     try:
@@ -61,9 +62,11 @@ def enviar(url, clave, ruta, cuerpo, timeout=8):
             return e.code, json.loads(e.read() or b"{}")
         except ValueError:
             return e.code, {}
+    except (urllib.error.URLError, OSError, ValueError) as e:   # incluye TimeoutError y ConnectionError
+        return 0, {"error": "sin respuesta del servidor (" + type(e).__name__ + ")"}
 
 
-def llamar(url, metodo, ruta, cuerpo=None, token=None, timeout=15):
+def llamar(url, metodo, ruta, cuerpo=None, token=None, timeout=60):
     h = {"Content-Type": "application/json"}
     if token:
         h["Authorization"] = "Bearer " + token
@@ -77,6 +80,8 @@ def llamar(url, metodo, ruta, cuerpo=None, token=None, timeout=15):
             return e.code, json.loads(e.read() or b"null")
         except ValueError:
             return e.code, None
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return 0, {"error": "sin respuesta del servidor (" + type(e).__name__ + ")"}
 
 
 def claves_de_todos(url, email, clave):
@@ -176,19 +181,28 @@ def main():
             out.append(f"[{iso(ahora)}] {cod}: SIN RED – {len(pend)} lecturas en búfer local")
             return out
         if cod not in conocidos:   # primer contacto: envío individual para aprender qué variables mide este dispositivo
+            todas = True
             for m in list(pend):
                 st, r = enviar(url, clave, "/mediciones", m)
+                if st == 0:
+                    todas = False
+                    out.append(f"[{iso(ahora)}] {cod}: sin respuesta del servidor; {len(pend)} lecturas quedan en el búfer y se reintentan")
+                    break
                 if st == 422 and "sensor activo" in str(r):
                     ignoradas.add((cod, m["variable"])); pend.remove(m); continue
                 out.append(f"[{iso(ahora)}] {cod} {m['variable']}={m['valor']} -> HTTP {st} {r if st >= 400 or r.get('alerta') else ''}")
                 if st in (201, 409, 422):
                     pend.remove(m)
-            conocidos.add(cod)
+            if todas:
+                conocidos.add(cod)
             return out
         lote = pend[:500]
         if not lote:
             return out
         st, r = enviar(url, clave, "/mediciones/lote", {"mediciones": lote})
+        if st == 0:   # sin respuesta: las lecturas siguen en el búfer y se reenvían en el próximo ciclo (el servidor ignora duplicados)
+            out.append(f"[{iso(ahora)}] {cod}: sin respuesta del servidor ({r['error']}); {len(pend)} lecturas en búfer, se reintenta")
+            return out
         if st == 422 and "sensor activo" in str(r):   # cambió la configuración del dispositivo: se vuelve a aprender
             conocidos.discard(cod)
             out.append(f"[{iso(ahora)}] {cod}: la API rechazó una variable; se revalidan sus sensores")
@@ -216,8 +230,11 @@ def main():
             # todos los dispositivos envían a la vez (como equipos independientes), no uno detrás de otro
             futuros = [pool.submit(ciclo, cod, clave, i, ahora, sin_red, cortados) for cod, clave in claves.items()]
             for f in futuros:
-                for linea in f.result():
-                    print(linea, flush=True)
+                try:
+                    for linea in f.result():
+                        print(linea, flush=True)
+                except Exception as e:   # un fallo inesperado no debe detener la simulación
+                    print(f"[{iso(ahora)}] error inesperado ({type(e).__name__}: {e}); se continúa", flush=True)
             if a.ciclos == 0 or i < a.ciclos:
                 time.sleep(max(0.0, a.intervalo - (time.time() - t0)))
 
