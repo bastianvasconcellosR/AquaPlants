@@ -129,7 +129,7 @@ function irA(v) {
 /* ================= CU02 Estado actual ================= */
 async function vEstado() {
   const m = $('#contenido');
-  m.innerHTML = `<h1>Estado actual</h1><p class="sub">Última lectura de cada sensor. Se actualiza solo cada 30 segundos.</p><div id="aviso"></div><div id="kpis"></div><div id="devs">${cargando()}</div>`;
+  m.innerHTML = `<h1>Estado actual</h1><p class="sub">Última lectura de cada sensor. Se actualiza solo cada 30 segundos.</p><div id="aviso"></div><div id="kpis"></div><div id="gestion"></div><div id="devs">${cargando()}</div>`;
   const pintar = (est, fallo) => {
     ultimoEstado = est;
     $('#aviso').innerHTML = fallo ? `<div class="msg error" role="alert">Sin conexión con el servidor. Se muestran los últimos datos recibidos (${esc(fmtFecha(est.generado_en))}). Reintentando…</div>` : '';
@@ -148,7 +148,22 @@ async function vEstado() {
           <td class="hint">${esc(hace(s.marca_tiempo))}</td></tr>`).join('') || '<tr><td colspan="5" class="hint">Sin sensores registrados</td></tr>'}
         </tbody></table></div></div>`).join('') : vacio('Aún no hay dispositivos registrados.');
   };
+  const puedeGestion = ['Administrador', 'Supervisor'].includes(usuario.rol);
+  const gestion = async () => {
+    if (!puedeGestion) return;
+    try {
+      const ahora = new Date(), f = (d) => d.toISOString().slice(0, 19) + 'Z';
+      const r = await API.get('/informes/gestion?' + new URLSearchParams({ desde: f(new Date(ahora - 864e5)), hasta: f(ahora) })), x = r.resumen;
+      const it = (k, v, sub = '') => `<div><span class="hint">${esc(k)}</span><b>${esc(v)}</b>${sub ? `<small class="hint">${esc(sub)}</small>` : ''}</div>`;
+      $('#gestion').innerHTML = `<div class="card resumen-gestion"><div class="dev-head"><strong>Resumen de gestión · últimas 24 horas</strong><button class="btn sec sm" id="ver-informe">Ver informe completo</button></div>
+        <div class="rg-grid">${it('Mediciones recibidas', x.mediciones)}${it('Fuera de rango', x.pct_fuera_de_rango + ' %', x.mediciones_fuera_de_rango + ' mediciones')}
+        ${it('Alertas del período', x.alertas_periodo, x.alertas_criticas + ' críticas')}${it('Alertas abiertas', x.alertas_abiertas_ahora)}
+        ${it('Resolución media', x.tiempo_medio_resolucion_min === null ? '—' : x.tiempo_medio_resolucion_min + ' min', x.alertas_resueltas + ' resueltas')}</div></div>`;
+      $('#ver-informe').addEventListener('click', () => irA('informe'));
+    } catch (e) { /* el resumen es complementario: si falla, el estado se sigue mostrando */ }
+  };
   const cargar = async () => {
+    gestion();
     try { pintar(await API.get('/dashboard/estado'), false); }
     catch (e) {
       if (e.red && ultimoEstado) pintar(ultimoEstado, true);
