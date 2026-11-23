@@ -86,13 +86,25 @@ for cod, (key, vs) in claves.items():
         for i in range(n):
             ts = ahora - timedelta(minutes=10 * (n - i))
             val = mu + sd * math.sin(i / 40.0) * 0.8 + random.gauss(0, sd * 0.15)
-            if cod == "AB-003" and v == "ph" and exc <= i < exc + 3: val = hi + 0.9
+            if cod == "AB-003" and v == "ph" and exc <= i < exc + 3: val = hi + 0.9                 # pH alto a mitad de período
+            if cod == "AB-004" and v == "conductividad_ec" and n - 14 <= i < n - 11: val = lo - 0.5  # EC baja reciente
+            if cod == "AB-005" and v == "humedad_ambiente" and n // 2 <= i < n // 2 + 3: val = hi + 6  # humedad alta
             med.append({"variable": v, "valor": round(val, 2), "marca_tiempo": ts.strftime("%Y-%m-%dT%H:%M:%SZ")})
         for k in range(0, len(med), 500):
             st, js = http("POST", "/mediciones/lote", {"mediciones": med[k:k + 500]}, key=key)
             if st not in (200, 201): print("lote", cod, v, "error", st, js); break
             total += len(med[k:k + 500])
 print("mediciones enviadas:", total)
+
+# Estados variados de alertas: una resuelta con causa, una en proceso y el resto pendientes
+if claves:
+    _, pend = http("GET", "/alertas?estado=Pendiente", token=t)
+    pend = sorted([x for x in (pend or []) if x["dispositivo"] in claves], key=lambda x: x["creada_en"])
+    if pend:
+        http("PATCH", f"/alertas/{pend[0]['id']}", {"estado": "Resuelta", "causa": "Se corrigió la dosificación de la solución y el valor volvió al rango."}, t)
+    if len(pend) > 1:
+        http("PATCH", f"/alertas/{pend[1]['id']}", {"estado": "En proceso"}, t)
+    print("alertas gestionadas:", min(len(pend), 2), "de", len(pend))
 
 te = login(a.encargado_email, a.encargado_clave) if (a.encargado_clave and claves) else None  # bitácora solo en la primera carga
 if te:

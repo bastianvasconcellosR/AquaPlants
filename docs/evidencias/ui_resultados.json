@@ -43,7 +43,7 @@
     "id": "PM-06",
     "descripcion": "Histórico: gráfico dibujado con estadísticas; el Encargado no ve «Exportar CSV»",
     "esperado": "canvas con píxeles dibujados, 4 tarjetas de estadísticas y sin botón CSV",
-    "obtenido": "píxeles=175133, csv visible=false",
+    "obtenido": "píxeles=175135, csv visible=false",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-06-historico.png"
   },
@@ -59,7 +59,7 @@
     "id": "PM-08",
     "descripcion": "Pérdida de conexión del navegador con la API: aviso claro, sin pantalla en blanco",
     "esperado": "mensaje «Sin conexión con el servidor…» y/o error legible",
-    "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (22-11-26, 10:27:59 p. m.). Reintentando…",
+    "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (23-11-26, 12:45:52 a. m.). Reintentando…",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-08-sin-conexion.png"
   },
@@ -91,7 +91,7 @@
     "id": "PM-12",
     "descripcion": "Respaldo manual desde la UI",
     "esperado": "aparece una fila «manual» con estado Completo",
-    "obtenido": " 22-11-26, 10:28:03 p. m.manualrespaldo_20261123_012803.sqlite311296Completo ",
+    "obtenido": " 23-11-26, 12:45:56 a. m.manualrespaldo_20261123_034556.sqlite311296Completo ",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-12-respaldos.png"
   },
@@ -107,9 +107,17 @@
     "id": "PM-15",
     "descripcion": "Informe de gestión visible desde la interfaz (Administrador/Supervisor)",
     "esperado": "aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas",
-    "obtenido": "Período: 21-11-26, 10:28:05 p. m. a 22-11-26, 10:28:05 p. m. · Generado por Administrador el 22-11-26, 10:28:0",
+    "obtenido": "Período: 22-11-26, 12:45:57 a. m. a 23-11-26, 12:45:57 a. m. · Generado por Administrador el 23-11-26, 12:45:5",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-15-informe-gestion.png"
+  },
+  {
+    "id": "PM-16",
+    "descripcion": "El Estado actual muestra un resumen de gestión (Administrador/Supervisor) con enlace al informe completo",
+    "esperado": "aparece el resumen de 24 h y el botón lleva al informe",
+    "obtenido": "Resumen de gestión · últimas 24 horasVer informe completo Mediciones recibidas1443Fuera de rango0.6 ",
+    "estado": "Aprobado",
+    "evidencia": "docs/evidencias/pm-16-resumen-gestion.png"
   },
   {
     "id": "PM-14",

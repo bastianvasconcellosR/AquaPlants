@@ -121,6 +121,11 @@ const api = async (m, r, b, h = {}) => {
     await p.setViewportSize({ width: 1200, height: 900 }); await p.goto(URL); await p.evaluate(() => sessionStorage.clear()); await login(ADMIN); await p.click('button[data-v=informe]'); await p.waitForSelector('#i-body h2'); await p.waitForTimeout(500);
     const inf = (await p.textContent('#i-body')).replace(/\s+/g, ' '); const evInf = await shot('pm-15-informe-gestion');
     registrar('PM-15', 'Informe de gestión visible desde la interfaz (Administrador/Supervisor)', 'aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas', inf.slice(0, 110), /Resumen ejecutivo/.test(inf) && /Variables monitoreadas/.test(inf) && /Alertas del período/.test(inf), evInf);
+    // PM-16 resumen de gestión dentro del Estado actual (Administrador)
+    await p.click('button[data-v=estado]'); await p.waitForSelector('#gestion .resumen-gestion', { timeout: 15000 });
+    const rg = (await p.textContent('#gestion')).replace(/\s+/g, ' '); const evRg = await shot('pm-16-resumen-gestion');
+    await p.click('#ver-informe'); await p.waitForSelector('#i-body h2'); const alInf = /Informe de gestión/.test(await p.textContent('#contenido h1'));
+    registrar('PM-16', 'El Estado actual muestra un resumen de gestión (Administrador/Supervisor) con enlace al informe completo', 'aparece el resumen de 24 h y el botón lleva al informe', rg.slice(0, 100), /Resumen de gestión/.test(rg) && /Mediciones recibidas/.test(rg) && alInf, evRg);
     // PM-14 teclado / accesibilidad básica
     await p.goto(URL); await p.evaluate(() => sessionStorage.clear()); await p.reload(); await p.waitForSelector('#form-login');
     await p.keyboard.press('Tab'); const foco1 = await p.evaluate(() => document.activeElement.id); await p.keyboard.press('Tab'); const foco2 = await p.evaluate(() => document.activeElement.id);

@@ -66,3 +66,6 @@ tbody tr:hover{background:#F6F9F5}
 .login-wrap .login .card{width:100%;max-width:380px;border:0;background:transparent;padding:0}
 .login-wrap .login .brand{margin-bottom:6px}
 @media (max-width:760px){.login-wrap{grid-template-columns:1fr}.login-side{display:none}}
+
+.rg-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}.rg-grid div{display:flex;flex-direction:column;gap:2px}.rg-grid b{font-size:22px}.rg-grid small{font-size:12px}
+@media (max-width:760px){.rg-grid{grid-template-columns:repeat(2,1fr)}}
