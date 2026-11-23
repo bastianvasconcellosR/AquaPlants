@@ -15,6 +15,8 @@ ap.add_argument("--admin-clave", required=True)
 ap.add_argument("--encargado-email", default="encargado@aquaplants.cl")
 ap.add_argument("--encargado-clave", default="Cultivo2026aq")
 ap.add_argument("--dias", type=int, default=3)
+ap.add_argument("--recargar-claves", action="store_true", help="si AB-003/4/5 ya existen sin mediciones (carga interrumpida): regenera su clave y carga sus mediciones")
+ap.add_argument("--lote", type=int, default=100, help="mediciones por envío (por defecto 100)")
 a = ap.parse_args()
 BASE = a.url.rstrip("/") + "/api/v1"
 random.seed(2026)
@@ -25,7 +27,7 @@ def http(metodo, ruta, cuerpo=None, token=None, key=None):
     if key: h["X-API-Key"] = key
     r = urllib.request.Request(BASE + ruta, method=metodo, headers=h, data=json.dumps(cuerpo).encode() if cuerpo is not None else None)
     try:
-        with urllib.request.urlopen(r, timeout=90) as x:
+        with urllib.request.urlopen(r, timeout=300) as x:
             return x.status, json.loads(x.read() or b"null")
     except urllib.error.HTTPError as e:
         try: return e.code, json.loads(e.read())
@@ -41,7 +43,12 @@ PERFIL = {"ph": (6.2, 0.25), "temperatura_agua": (22, 1.6), "caudal": (2.5, 0.5)
 SISTEMAS = [("Invernadero Sur", "Sector sur, galpón 2"), ("Sala de Germinación", "Laboratorio, piso 1")]
 CULTIVOS = [("Invernadero Sur", "Tomate cherry", "Solanum lycopersicum", "2026-09-10"), ("Invernadero Sur", "Pimentón rojo", "Capsicum annuum", "2026-09-22"),
             ("Invernadero Sur", "Frutilla aeropónica", "Fragaria x ananassa", "2026-10-05"), ("Sala de Germinación", "Almácigos de lechuga", "Lactuca sativa", "2026-11-02"),
-            ("Sala de Germinación", "Cilantro", "Coriandrum sativum", "2026-11-09"), ("Sala de Germinación", "Menta", "Mentha spicata", "2026-11-12")]
+            ("Sala de Germinación", "Cilantro", "Coriandrum sativum", "2026-11-09"), ("Sala de Germinación", "Menta", "Mentha spicata", "2026-11-12"),
+            ("Invernadero Sur", "Pepino holandés", "Cucumis sativus", "2026-09-15"), ("Invernadero Sur", "Albahaca", "Ocimum basilicum", "2026-10-01"),
+            ("Invernadero Sur", "Acelga", "Beta vulgaris", "2026-10-08"), ("Invernadero Sur", "Espinaca", "Spinacia oleracea", "2026-10-14"),
+            ("Invernadero Sur", "Apio", "Apium graveolens", "2026-10-20"), ("Invernadero Sur", "Rúcula", "Eruca vesicaria", "2026-10-27"),
+            ("Sala de Germinación", "Perejil", "Petroselinum crispum", "2026-11-04"), ("Sala de Germinación", "Cebollín", "Allium schoenoprasum", "2026-11-06"),
+            ("Sala de Germinación", "Lechuga costina", "Lactuca sativa var. longifolia", "2026-11-10"), ("Sala de Germinación", "Rabanito", "Raphanus sativus", "2026-11-14")]
 DISPOSITIVOS = [("AB-003", "Controlador Invernadero A", "Invernadero Sur", ["ph", "temperatura_agua", "caudal"]),
                 ("AB-004", "Controlador Invernadero B", "Invernadero Sur", ["conductividad_ec", "humedad_ambiente"]),
                 ("AB-005", "Controlador Germinación", "Sala de Germinación", ["ph", "temperatura_agua", "humedad_ambiente"])]
@@ -73,8 +80,12 @@ for cod, nom, s, vs in DISPOSITIVOS:
         st, js = http("POST", "/dispositivos", {"id_sistema": sis[s]["id"], "codigo": cod, "nombre": nom, "variables": vs}, t)
         if st == 201: claves[cod] = (js["api_key"], vs); print("dispositivo", cod, st)
         else: print("dispositivo", cod, "error", st, js)
+    elif a.recargar_claves:
+        st, js = http("POST", f"/dispositivos/{disp[cod]['id']}/regenerar-clave", token=t)
+        if st in (200, 201): claves[cod] = (js["api_key"], vs); print("dispositivo", cod, "clave regenerada", st)
+        else: print("dispositivo", cod, "error al regenerar clave", st, js)
     else:
-        print("dispositivo", cod, "ya existía: sin clave, se omiten sus mediciones")
+        print("dispositivo", cod, "ya existía: sin clave, se omiten sus mediciones (use --recargar-claves si quedó sin datos)")
 
 ahora = datetime.now(timezone.utc).replace(microsecond=0)
 total = 0
@@ -90,10 +101,11 @@ for cod, (key, vs) in claves.items():
             if cod == "AB-004" and v == "conductividad_ec" and n - 14 <= i < n - 11: val = lo - 0.5  # EC baja reciente
             if cod == "AB-005" and v == "humedad_ambiente" and n // 2 <= i < n // 2 + 3: val = hi + 6  # humedad alta
             med.append({"variable": v, "valor": round(val, 2), "marca_tiempo": ts.strftime("%Y-%m-%dT%H:%M:%SZ")})
-        for k in range(0, len(med), 500):
-            st, js = http("POST", "/mediciones/lote", {"mediciones": med[k:k + 500]}, key=key)
+        for k in range(0, len(med), a.lote):
+            st, js = http("POST", "/mediciones/lote", {"mediciones": med[k:k + a.lote]}, key=key)
             if st not in (200, 201): print("lote", cod, v, "error", st, js); break
-            total += len(med[k:k + 500])
+            total += len(med[k:k + a.lote])
+        print("  ", cod, v, "->", len(med), "lecturas", flush=True)
 print("mediciones enviadas:", total)
 
 # Estados variados de alertas: una resuelta con causa, una en proceso y el resto pendientes
