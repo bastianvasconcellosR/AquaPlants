@@ -6,6 +6,8 @@ import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import sqlite3
+
 import jwt
 
 from tests.base import ADMIN_EMAIL, ADMIN_PASS, ENC, JWT_SECRET, OFFLINE_S, Base, caso, http
@@ -38,8 +40,8 @@ class Autenticacion(Base):
         st, u = self.api("POST", "/usuarios", {"nombre": "Temporal", "email": email, "clave": "Temporal2026x", "rol": "Encargado"}, t)
         self.api("DELETE", f"/usuarios/{u['id']}", token=t)
         st, js = self.login(email, "Temporal2026x")
-        caso("PI-03", "CU01", "Usuario desactivado no puede ingresar (FA2)", "403 con aviso de contactar al Administrador",
-             f"{st} {js.get('error')}", st == 403)
+        caso("PI-03", "CU01", "Usuario eliminado (borrado real) no puede ingresar", "401: la cuenta ya no existe en la base de datos",
+             f"{st} {js.get('error')}", st == 401)
 
     def test_pi04_token_expirado(self):
         exp = jwt.encode({"sub": "1", "rol": "Administrador", "iat": int(time.time()) - 7200, "exp": int(time.time()) - 3600}, JWT_SECRET, algorithm="HS256")
@@ -124,8 +126,8 @@ class Ingesta(Base):
         formato = self.api("POST", "/mediciones", {"variable": "ph", "valor": 6}, key="cualquier-cosa")[0]
         self.api("DELETE", f"/dispositivos/{e['disp']}", token=t)
         baja = self.api("POST", "/mediciones", {"variable": "ph", "valor": 6}, key=e["key"])[0]
-        caso("PI-15", "CU09", "API Key ausente, alterada, mal formada y de dispositivo desactivado", "401, 401, 401 y 403",
-             f"{sin}, {mala}, {formato}, {baja}", (sin, mala, formato, baja) == (401, 401, 401, 403))
+        caso("PI-15", "CU09", "API Key ausente, alterada, mal formada y de dispositivo eliminado", "401, 401, 401 y 401",
+             f"{sin}, {mala}, {formato}, {baja}", (sin, mala, formato, baja) == (401, 401, 401, 401))
 
     def test_pi16_lote(self):
         e = self.entorno(); base = ahora() - timedelta(minutes=30)
@@ -304,11 +306,13 @@ class Administracion(Base):
         mala = self.api("POST", "/cultivos", {"id_sistema": 999999, "nombre": "X"}, t)[0]
         fecha = self.api("POST", "/cultivos", {"id_sistema": s["id"], "nombre": "X", "fecha_inicio": "01/10/2026"}, t)[0]
         baja = self.api("DELETE", f"/cultivos/{c['id']}", token=t)
-        _, cu = self.api("GET", f"/cultivos/{c['id']}", token=t)
-        caso("PI-33", "CU07", "CRUD de sistema y cultivo (crear, leer, editar, desactivar) con validaciones",
-             "201, 200, nombre editado, 201; cultivo con sistema inexistente 422; fecha mal formada 422; baja lógica (el registro permanece con activo=false)",
-             f"{st}, {ed}, «{uno['nombre']}», {st2}; {mala}; {fecha}; baja={baja[0]} activo={cu['activo']}",
-             st == 201 and ed == 200 and uno["nombre"].endswith("editado") and st2 == 201 and mala == 422 and fecha == 422 and baja[0] == 200 and cu["activo"] is False)
+        cu = self.api("GET", f"/cultivos/{c['id']}", token=t)[0]
+        bd = sqlite3.connect(Base.srv.dir + "/t.db")
+        en_bd = bd.execute("SELECT COUNT(*) FROM cultivo WHERE id = ?", (c["id"],)).fetchone()[0]; bd.close()
+        caso("PI-33", "CU07", "CRUD de sistema y cultivo (crear, leer, editar, eliminar) con validaciones",
+             "201, 200, nombre editado, 201; cultivo con sistema inexistente 422; fecha mal formada 422; eliminación real (DELETE 200; después GET 404 y 0 filas en la tabla)",
+             f"{st}, {ed}, «{uno['nombre']}», {st2}; {mala}; {fecha}; DELETE={baja[0]} GET={cu} filas_en_bd={en_bd}",
+             st == 201 and ed == 200 and uno["nombre"].endswith("editado") and st2 == 201 and mala == 422 and fecha == 422 and baja[0] == 200 and cu == 404 and en_bd == 0)
 
     def test_pi34_dispositivo_api_key(self):
         e = self.entorno(); t = self.token("admin")

@@ -43,7 +43,7 @@
     "id": "PM-06",
     "descripcion": "Histórico: gráfico dibujado con estadísticas; el Encargado no ve «Exportar CSV»",
     "esperado": "canvas con píxeles dibujados, 4 tarjetas de estadísticas y sin botón CSV",
-    "obtenido": "píxeles=175132, csv visible=false",
+    "obtenido": "píxeles=175121, csv visible=false",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-06-historico.png"
   },
@@ -59,7 +59,7 @@
     "id": "PM-08",
     "descripcion": "Pérdida de conexión del navegador con la API: aviso claro, sin pantalla en blanco",
     "esperado": "mensaje «Sin conexión con el servidor…» y/o error legible",
-    "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (23-11-26, 7:28:26 a. m.). Reintentando…",
+    "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (23-11-26, 8:14:10 a. m.). Reintentando…",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-08-sin-conexion.png"
   },
@@ -91,7 +91,7 @@
     "id": "PM-12",
     "descripcion": "Respaldo manual desde la UI",
     "esperado": "aparece una fila «manual» con estado Completo",
-    "obtenido": " 23-11-26, 7:28:30 a. m.manualrespaldo_20261123_102830.sqlite311296Completo ",
+    "obtenido": " 23-11-26, 8:14:14 a. m.manualrespaldo_20261123_111414.sqlite311296Completo ",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-12-respaldos.png"
   },
@@ -107,7 +107,7 @@
     "id": "PM-15",
     "descripcion": "Informe de gestión visible desde la interfaz (Administrador/Supervisor)",
     "esperado": "aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas",
-    "obtenido": "Período: 22-11-26, 7:28:32 a. m. a 23-11-26, 7:28:32 a. m. · Generado por Administrador el 23-11-26, 7:28:32 a",
+    "obtenido": "Período: 22-11-26, 8:14:16 a. m. a 23-11-26, 8:14:16 a. m. · Generado por Administrador el 23-11-26, 8:14:16 a",
     "estado": "Aprobado",
     "evidencia": "docs/evidencias/pm-15-informe-gestion.png"
   },

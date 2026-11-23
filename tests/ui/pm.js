@@ -117,7 +117,7 @@ const api = async (m, r, b, h = {}) => {
     const ov = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     registrar('PM-13', 'Vista móvil (390 px): sin desplazamiento horizontal de la página', 'scrollWidth ≤ clientWidth', `desborde=${ov}px`, ov <= 1, await shot('pm-13-movil'));
     await p.setViewportSize({ width: 1200, height: 800 });
-    // PM-15 informe de gestión + eliminar (borrado lógico) en el CRUD
+    // PM-15 informe de gestión + eliminar (borrado real) en el CRUD
     await p.setViewportSize({ width: 1200, height: 900 }); await p.goto(URL); await p.evaluate(() => sessionStorage.clear()); await login(ADMIN); await p.click('button[data-v=informe]'); await p.waitForSelector('#i-body h2'); await p.waitForTimeout(500);
     const inf = (await p.textContent('#i-body')).replace(/\s+/g, ' '); const evInf = await shot('pm-15-informe-gestion');
     registrar('PM-15', 'Informe de gestión visible desde la interfaz (Administrador/Supervisor)', 'aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas', inf.slice(0, 110), /Resumen ejecutivo/.test(inf) && /Variables monitoreadas/.test(inf) && /Alertas del período/.test(inf), evInf);

@@ -354,7 +354,7 @@ async function adminTabla() {
     const tieneActivo = ent.cols.some(c => c[0] === 'activo');
     const visibles = (tieneActivo && !adminVerElim) ? filas.filter(f => f.activo) : filas;
     body.innerHTML = `<div class="row">${ent.solo ? '<button class="btn" data-x="resp">Crear respaldo ahora</button>' : '<button class="btn" data-x="nuevo">Nuevo</button>'}
-      ${tieneActivo ? `<label class="inline"><input type="checkbox" id="a-verelim" ${adminVerElim ? 'checked' : ''}> Mostrar eliminados</label>` : ''}</div>
+      ${tieneActivo ? `<label class="inline"><input type="checkbox" id="a-verelim" ${adminVerElim ? 'checked' : ''}> Mostrar inactivos</label>` : ''}</div>
       ${visibles.length ? `<div class="table-wrap"><table><thead><tr>${ent.cols.map(c => `<th>${c[1]}</th>`).join('')}${ent.solo ? '' : '<th></th>'}</tr></thead><tbody>
       ${visibles.map(f => `<tr>${ent.cols.map(c => `<td>${celda(f, c[0])}</td>`).join('')}${ent.solo ? '' : `<td style="white-space:nowrap"><button class="btn sec sm" data-x="edit" data-id="${f.id}">Editar</button>
         ${!ent.sinBorrar && f.activo ? ` <button class="btn sec sm" data-x="del" data-id="${f.id}">Eliminar</button>` : ''}${adminTab === 'dispositivos' ? ` <button class="btn sec sm" data-x="key" data-id="${f.id}">Regenerar clave</button>` : ''}</td>`}</tr>`).join('')}
@@ -391,8 +391,8 @@ $('#contenido').addEventListener('click', async (ev) => {
       b.disabled = true; const r = await API.post('/respaldos'); toast('Respaldo ' + r.estado.toLowerCase()); return adminTabla();
     }
     if (b.dataset.x === 'del') {
-      if (!confirm('¿Eliminar este registro? Es un borrado lógico: deja de usarse pero se conserva el historial. Podrá reactivarlo editándolo.')) return;
-      await API.del(ent.ruta + '/' + id); toast('Registro eliminado (borrado lógico)'); return adminTabla();
+      if (!confirm('¿Eliminar este registro definitivamente? Se borra de la base de datos junto con los datos que dependen de él (mediciones, alertas, bitácora). No se puede deshacer.')) return;
+      await API.del(ent.ruta + '/' + id); toast('Registro eliminado de la base de datos'); return adminTabla();
     }
     if (b.dataset.x === 'key') {
       if (!confirm('La clave actual dejará de funcionar. ¿Regenerar?')) return;

@@ -27,3 +27,10 @@ Tip: `python simulator/simulador.py ... --escenario ph_alto --ciclos 2` deja una
   *Sin conexión* y genera la alerta de desconexión.
   `del corte.txt` → AB-003 se reconecta y **reenvía por lote** lo acumulado con su hora original: el histórico no pierde datos.
 - Un `corte.txt` vacío corta a todos los dispositivos.
+
+## Eliminar registros (borrado real)
+El botón **Eliminar** del CRUD ejecuta un `DELETE` en la base de datos (ya no es borrado lógico). Reglas:
+- Cultivo: se borra junto con sus registros de bitácora. Sensor: junto con sus mediciones y alertas. Dispositivo: junto con sus sensores, mediciones y alertas (su API Key deja de existir).
+- Usuario: se borra; la bitácora y alertas que gestionó se conservan con el usuario en blanco. No se puede eliminar al último Administrador ni al propio usuario.
+- Sistema: solo si no tiene cultivos ni dispositivos (409 con mensaje); sus umbrales se borran con él.
+- Comprobación en Cloud SQL Studio: `SELECT id, nombre FROM cultivo ORDER BY id DESC LIMIT 5;` → la fila eliminada ya no aparece.

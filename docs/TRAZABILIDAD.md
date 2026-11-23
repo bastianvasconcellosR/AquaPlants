@@ -40,4 +40,4 @@
 Reglas de negocio de la ES2 implementadas: dashboard con sondeo cada 30 s; dispositivo sin conexión a los 90 s; bloqueo
 a los 5 intentos fallidos durante 15 min; JWT de 60 min; lote ≤ 500 transaccional con deduplicación; rechazo de marcas
 de tiempo futuras; alertas Pendiente → En proceso → Resuelta con causa obligatoria (cierre directo permitido); exportación ≤ 10.000 filas;
-respaldo manual y diario (03:00 UTC) con retención de 7 días; auditoría de acciones sensibles; borrado lógico.
+respaldo manual y diario (03:00 UTC) con retención de 7 días; auditoría de acciones sensibles; eliminación real (DELETE) con borrado en cascada de lo dependiente.

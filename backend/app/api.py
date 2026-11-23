@@ -213,17 +213,19 @@ def usuarios_editar(request):
 
 
 @ruta("/usuarios/{id:int}", "DELETE", ADMIN)
-def usuarios_desactivar(request):
+def usuarios_eliminar(request):
     uid = request.path_params["id"]
     with db.connect() as c:
         u = c.one("SELECT u.*, r.nombre AS rol FROM usuario u JOIN rol r ON r.id = u.id_rol WHERE u.id = ?", (uid,))
         if not u:
             return error(404, "Usuario no encontrado")
         if u["rol"] == ADMIN and _ultimo_admin(c, uid):
-            return error(409, "No se puede desactivar al último Administrador activo")
-        c.update("usuario", {"activo": False}, "id = ?", (uid,))
-        services.auditar(c, request.state.usuario, "usuario_desactivado", f"id={uid}")
-    return ok({"id": uid, "activo": False})
+            return error(409, "No se puede eliminar al último Administrador activo")
+        if request.state.usuario and request.state.usuario["id"] == uid:
+            return error(409, "No puede eliminar su propio usuario")
+        _borrar(c, "usuario", uid)
+        services.auditar(c, request.state.usuario, "usuario_eliminado", f"id={uid} {u['email']}".strip())
+    return ok({"id": uid, "eliminado": True})
 
 
 @ruta("/roles", "GET", ADMIN)
@@ -235,6 +237,31 @@ def roles(request):
 # ================================================================ CU07 sistemas / cultivos / dispositivos / sensores
 def _existe(c, tabla, id_):
     return c.one(f"SELECT id FROM {tabla} WHERE id = ?", (id_,)) is not None
+
+
+def _borrar(c, tabla, i):
+    """Eliminación física (DELETE) de un registro y de lo que depende de él, en orden para respetar las FK.
+    Devuelve None si se borró, o un texto con el motivo si no se puede (sistema con elementos asociados)."""
+    if tabla == "sistema":
+        nc = c.one("SELECT COUNT(*) AS n FROM cultivo WHERE id_sistema = ?", (i,))["n"]
+        nd = c.one("SELECT COUNT(*) AS n FROM dispositivo WHERE id_sistema = ?", (i,))["n"]
+        if nc or nd:
+            return f"El sistema tiene {nc} cultivo(s) y {nd} dispositivo(s) asociados: elimínelos primero"
+        c.execute("DELETE FROM umbral WHERE id_sistema = ?", (i,))
+    elif tabla == "cultivo":
+        c.execute("DELETE FROM evento_bitacora WHERE id_cultivo = ?", (i,))
+    elif tabla == "sensor":
+        c.execute("DELETE FROM alerta WHERE id_sensor = ?", (i,))
+        c.execute("DELETE FROM medicion WHERE id_sensor = ?", (i,))
+    elif tabla == "dispositivo":
+        c.execute("DELETE FROM alerta WHERE id_dispositivo = ?", (i,))
+        c.execute("DELETE FROM medicion WHERE id_sensor IN (SELECT id FROM sensor WHERE id_dispositivo = ?)", (i,))
+        c.execute("DELETE FROM sensor WHERE id_dispositivo = ?", (i,))
+    elif tabla == "usuario":  # se conserva la bitácora/alertas, pero sin referencia al usuario eliminado
+        for t in ("evento_bitacora", "alerta", "respaldo"):
+            c.execute(f"UPDATE {t} SET id_usuario = NULL WHERE id_usuario = ?", (i,))
+    c.execute(f"DELETE FROM {tabla} WHERE id = ?", (i,))
+    return None
 
 
 def _crud(nombre, tabla, Esquema, campos, fk=None):
@@ -277,14 +304,17 @@ def _crud(nombre, tabla, Esquema, campos, fk=None):
         return ok({"id": i})
 
     @ruta(f"/{nombre}/{{id:int}}", "DELETE", ADMIN)
-    def desactivar(request, _t=tabla):
+    def eliminar(request, _t=tabla):
         i = request.path_params["id"]
         with db.connect() as c:
-            if not _existe(c, _t, i):
+            f = c.one(f"SELECT * FROM {_t} WHERE id = ?", (i,))
+            if not f:
                 return error(404, "No encontrado")
-            c.update(_t, {"activo": False}, "id = ?", (i,))
-            services.auditar(c, request.state.usuario, f"{_t}_desactivado", f"id={i}")
-        return ok({"id": i, "activo": False})
+            motivo = _borrar(c, _t, i)
+            if motivo:
+                return error(409, motivo)
+            services.auditar(c, request.state.usuario, f"{_t}_eliminado", f"id={i} {f.get('nombre') or f.get('variable') or ''}".strip())
+        return ok({"id": i, "eliminado": True})
 
 
 _crud("sistemas", "sistema", schemas.SistemaIn, ["nombre", "ubicacion", "activo"])
@@ -337,14 +367,15 @@ def disp_editar(request):
 
 
 @ruta("/dispositivos/{id:int}", "DELETE", ADMIN)
-def disp_desactivar(request):
+def disp_eliminar(request):
     i = request.path_params["id"]
     with db.connect() as c:
-        if not _existe(c, "dispositivo", i):
+        d = c.one("SELECT codigo FROM dispositivo WHERE id = ?", (i,))
+        if not d:
             return error(404, "No encontrado")
-        c.update("dispositivo", {"activo": False}, "id = ?", (i,))
-        services.auditar(c, request.state.usuario, "dispositivo_desactivado", f"id={i}")
-    return ok({"id": i, "activo": False})
+        _borrar(c, "dispositivo", i)
+        services.auditar(c, request.state.usuario, "dispositivo_eliminado", f"id={i} {d['codigo']}")
+    return ok({"id": i, "eliminado": True})
 
 
 @ruta("/dispositivos/{id:int}/regenerar-clave", "POST", ADMIN)
