@@ -125,15 +125,16 @@ def login(request):
             security.verificar_clave(d.clave, "scrypt$AAAA$AAAA")  # iguala el tiempo de respuesta
             services.auditar(c, None, "login_fallido", "correo desconocido")
             return error(401, generico)
+        cfg = services.leer_config(c)
         bh = db.iso(u["bloqueado_hasta"])
         if bh and db.parse_iso(bh) > ahora:
             return error(423, "Cuenta bloqueada temporalmente por intentos fallidos. Intente más tarde.")
         if not security.verificar_clave(d.clave, u["hash_clave"]):
             n = u["intentos_fallidos"] + 1
             cambios = {"intentos_fallidos": n}
-            if n >= config.MAX_INTENTOS:
+            if n >= cfg["max_intentos"]:
                 cambios = {"intentos_fallidos": 0,
-                           "bloqueado_hasta": db.to_iso(ahora + timedelta(minutes=config.BLOQUEO_MINUTOS))}
+                           "bloqueado_hasta": db.to_iso(ahora + timedelta(minutes=cfg["bloqueo_minutos"]))}
             c.update("usuario", cambios, "id = ?", (u["id"],))
             services.auditar(c, u, "login_fallido", f"intento {n}")
             return error(401, generico)
@@ -213,19 +214,58 @@ def usuarios_editar(request):
 
 
 @ruta("/usuarios/{id:int}", "DELETE", ADMIN)
-def usuarios_eliminar(request):
+def usuarios_desactivar(request):
     uid = request.path_params["id"]
     with db.connect() as c:
         u = c.one("SELECT u.*, r.nombre AS rol FROM usuario u JOIN rol r ON r.id = u.id_rol WHERE u.id = ?", (uid,))
         if not u:
             return error(404, "Usuario no encontrado")
         if u["rol"] == ADMIN and _ultimo_admin(c, uid):
-            return error(409, "No se puede eliminar al último Administrador activo")
-        if request.state.usuario and request.state.usuario["id"] == uid:
-            return error(409, "No puede eliminar su propio usuario")
-        _borrar(c, "usuario", uid)
-        services.auditar(c, request.state.usuario, "usuario_eliminado", f"id={uid} {u['email']}".strip())
-    return ok({"id": uid, "eliminado": True})
+            return error(409, "No se puede desactivar al último Administrador activo")
+        c.update("usuario", {"activo": False}, "id = ?", (uid,))
+        services.auditar(c, request.state.usuario, "usuario_desactivado", f"id={uid}")
+    return ok({"id": uid, "activo": False})
+
+
+@ruta("/usuarios/{id:int}/activar", "POST", ADMIN)
+def usuarios_activar(request):
+    uid = request.path_params["id"]
+    with db.connect() as c:
+        if not _existe(c, "usuario", uid):
+            return error(404, "Usuario no encontrado")
+        c.update("usuario", {"activo": True, "intentos_fallidos": 0, "bloqueado_hasta": None}, "id = ?", (uid,))
+        services.auditar(c, request.state.usuario, "usuario_reactivado", f"id={uid}")
+    return ok({"id": uid, "activo": True})
+
+
+@ruta("/configuracion", "GET", ADMIN)
+def config_leer(request):
+    with db.connect() as c:
+        return ok(services.leer_config(c))
+
+
+@ruta("/configuracion", "PUT", ADMIN)
+@manejar
+def config_guardar(request):
+    d = cuerpo(request, schemas.ConfiguracionIn)
+    ahora = db.to_iso(db.utcnow())
+    with db.connect() as c:
+        antes = services.leer_config(c)
+        for k, v in (("max_intentos", d.max_intentos), ("bloqueo_minutos", d.bloqueo_minutos)):
+            if c.one("SELECT clave FROM configuracion WHERE clave = ?", (k,)):
+                c.update("configuracion", {"valor": str(v), "actualizado_en": ahora}, "clave = ?", (k,))
+            else:
+                c.execute("INSERT INTO configuracion (clave, valor, actualizado_en) VALUES (?, ?, ?)", (k, str(v), ahora))  # sin columna id: no usar insert()
+        services.auditar(c, request.state.usuario, "configuracion_modificada",
+                         f"max_intentos {antes['max_intentos']}->{d.max_intentos}; bloqueo_minutos {antes['bloqueo_minutos']}->{d.bloqueo_minutos}")
+    return ok({"max_intentos": d.max_intentos, "bloqueo_minutos": d.bloqueo_minutos})
+
+
+@ruta("/encargados", "GET", ADMIN, SUP)
+def encargados(request):
+    with db.connect() as c:
+        return ok(c.all("SELECT u.id, u.nombre FROM usuario u JOIN rol r ON r.id = u.id_rol "
+                        "WHERE r.nombre = 'Encargado' AND u.activo = ? ORDER BY u.nombre", (True,)))
 
 
 @ruta("/roles", "GET", ADMIN)
@@ -239,29 +279,17 @@ def _existe(c, tabla, id_):
     return c.one(f"SELECT id FROM {tabla} WHERE id = ?", (id_,)) is not None
 
 
-def _borrar(c, tabla, i):
-    """Eliminación física (DELETE) de un registro y de lo que depende de él, en orden para respetar las FK.
-    Devuelve None si se borró, o un texto con el motivo si no se puede (sistema con elementos asociados)."""
-    if tabla == "sistema":
-        nc = c.one("SELECT COUNT(*) AS n FROM cultivo WHERE id_sistema = ?", (i,))["n"]
-        nd = c.one("SELECT COUNT(*) AS n FROM dispositivo WHERE id_sistema = ?", (i,))["n"]
-        if nc or nd:
-            return f"El sistema tiene {nc} cultivo(s) y {nd} dispositivo(s) asociados: elimínelos primero"
-        c.execute("DELETE FROM umbral WHERE id_sistema = ?", (i,))
-    elif tabla == "cultivo":
-        c.execute("DELETE FROM evento_bitacora WHERE id_cultivo = ?", (i,))
-    elif tabla == "sensor":
-        c.execute("DELETE FROM alerta WHERE id_sensor = ?", (i,))
-        c.execute("DELETE FROM medicion WHERE id_sensor = ?", (i,))
-    elif tabla == "dispositivo":
-        c.execute("DELETE FROM alerta WHERE id_dispositivo = ?", (i,))
-        c.execute("DELETE FROM medicion WHERE id_sensor IN (SELECT id FROM sensor WHERE id_dispositivo = ?)", (i,))
-        c.execute("DELETE FROM sensor WHERE id_dispositivo = ?", (i,))
-    elif tabla == "usuario":  # se conserva la bitácora/alertas, pero sin referencia al usuario eliminado
-        for t in ("evento_bitacora", "alerta", "respaldo"):
-            c.execute(f"UPDATE {t} SET id_usuario = NULL WHERE id_usuario = ?", (i,))
-    c.execute(f"DELETE FROM {tabla} WHERE id = ?", (i,))
+def _encargado_valido(c, id_encargado):
+    """None si el id es nulo o es un usuario activo con rol Encargado; si no, la respuesta 422."""
+    if id_encargado is None:
+        return None
+    u = c.one("SELECT u.activo, r.nombre AS rol FROM usuario u JOIN rol r ON r.id = u.id_rol WHERE u.id = ?", (id_encargado,))
+    if not u or not u["activo"] or u["rol"] != ENC:
+        return error(422, "Datos inválidos", detalles=[{"campo": "id_encargado", "mensaje": "debe ser un usuario activo con rol Encargado"}])
     return None
+
+
+_SEL = {"cultivo": "SELECT t.*, u.nombre AS encargado FROM cultivo t LEFT JOIN usuario u ON u.id = t.id_encargado"}
 
 
 def _crud(nombre, tabla, Esquema, campos, fk=None):
@@ -270,12 +298,12 @@ def _crud(nombre, tabla, Esquema, campos, fk=None):
     @ruta(f"/{nombre}", "GET", *TODOS)
     def listar(request, _t=tabla):
         with db.connect() as c:
-            return ok([_limpiar(f) for f in c.all(f"SELECT * FROM {_t} ORDER BY id")])
+            return ok([_limpiar(f) for f in c.all(_SEL.get(_t, f"SELECT t.* FROM {_t} t") + " ORDER BY t.id")])
 
     @ruta(f"/{nombre}/{{id:int}}", "GET", *TODOS)
     def uno(request, _t=tabla):
         with db.connect() as c:
-            f = c.one(f"SELECT * FROM {_t} WHERE id = ?", (request.path_params["id"],))
+            f = c.one(_SEL.get(_t, f"SELECT t.* FROM {_t} t") + " WHERE t.id = ?", (request.path_params["id"],))
         return ok(_limpiar(f)) if f else error(404, "No encontrado")
 
     @ruta(f"/{nombre}", "POST", ADMIN)
@@ -285,6 +313,8 @@ def _crud(nombre, tabla, Esquema, campos, fk=None):
         with db.connect() as c:
             if fk and not _existe(c, fk[1], getattr(d, fk[0])):
                 return error(422, "Datos inválidos", detalles=[{"campo": fk[0], "mensaje": "referencia inexistente"}])
+            if "id_encargado" in campos and (e := _encargado_valido(c, d.id_encargado)):
+                return e
             nuevo = c.insert(_t, {k: getattr(d, k) for k in campos})
             services.auditar(c, request.state.usuario, f"{_t}_creado", f"id={nuevo}")
         return ok({"id": nuevo}, 201)
@@ -299,27 +329,57 @@ def _crud(nombre, tabla, Esquema, campos, fk=None):
                 return error(404, "No encontrado")
             if fk and not _existe(c, fk[1], getattr(d, fk[0])):
                 return error(422, "Datos inválidos", detalles=[{"campo": fk[0], "mensaje": "referencia inexistente"}])
-            c.update(_t, {k: getattr(d, k) for k in campos}, "id = ?", (i,))
+            cs = [k for k in campos if k != "id_encargado" or "id_encargado" in d.model_fields_set]  # si no viene, se conserva
+            if "id_encargado" in cs and (e := _encargado_valido(c, d.id_encargado)):
+                return e
+            c.update(_t, {k: getattr(d, k) for k in cs}, "id = ?", (i,))
             services.auditar(c, request.state.usuario, f"{_t}_editado", f"id={i}")
         return ok({"id": i})
 
     @ruta(f"/{nombre}/{{id:int}}", "DELETE", ADMIN)
-    def eliminar(request, _t=tabla):
+    def desactivar(request, _t=tabla):
         i = request.path_params["id"]
         with db.connect() as c:
-            f = c.one(f"SELECT * FROM {_t} WHERE id = ?", (i,))
-            if not f:
+            if not _existe(c, _t, i):
                 return error(404, "No encontrado")
-            motivo = _borrar(c, _t, i)
-            if motivo:
-                return error(409, motivo)
-            services.auditar(c, request.state.usuario, f"{_t}_eliminado", f"id={i} {f.get('nombre') or f.get('variable') or ''}".strip())
-        return ok({"id": i, "eliminado": True})
+            c.update(_t, {"activo": False}, "id = ?", (i,))
+            services.auditar(c, request.state.usuario, f"{_t}_desactivado", f"id={i}")
+        return ok({"id": i, "activo": False})
+
+
+    @ruta(f"/{nombre}/{{id:int}}/activar", "POST", ADMIN)
+    def reactivar(request, _t=tabla):
+        i = request.path_params["id"]
+        with db.connect() as c:
+            if not _existe(c, _t, i):
+                return error(404, "No encontrado")
+            c.update(_t, {"activo": True}, "id = ?", (i,))
+            services.auditar(c, request.state.usuario, f"{_t}_reactivado", f"id={i}")
+        return ok({"id": i, "activo": True})
 
 
 _crud("sistemas", "sistema", schemas.SistemaIn, ["nombre", "ubicacion", "activo"])
-_crud("cultivos", "cultivo", schemas.CultivoIn, ["id_sistema", "nombre", "especie", "fecha_inicio", "activo"],
+_crud("cultivos", "cultivo", schemas.CultivoIn, ["id_sistema", "nombre", "especie", "fecha_inicio", "activo", "id_encargado"],
       fk=("id_sistema", "sistema"))
+
+
+@ruta("/cultivos/{id:int}/encargado", "PUT", ADMIN, SUP)
+@manejar
+def cultivo_asignar(request):
+    """El Supervisor (o el Administrador) asigna o quita el encargado de un cultivo."""
+    i = request.path_params["id"]
+    d = cuerpo(request, schemas.AsignacionIn)
+    with db.connect() as c:
+        cu = c.one("SELECT nombre FROM cultivo WHERE id = ?", (i,))
+        if not cu:
+            return error(404, "No encontrado")
+        if e := _encargado_valido(c, d.id_encargado):
+            return e
+        c.update("cultivo", {"id_encargado": d.id_encargado}, "id = ?", (i,))
+        quien = c.one("SELECT nombre FROM usuario WHERE id = ?", (d.id_encargado,)) if d.id_encargado else None
+        services.auditar(c, request.state.usuario, "cultivo_encargado_asignado",
+                         f"cultivo={cu['nombre']} encargado={quien['nombre'] if quien else 'ninguno'}", id_cultivo=i)
+    return ok({"id": i, "id_encargado": d.id_encargado})
 _crud("sensores", "sensor", schemas.SensorIn, ["id_dispositivo", "variable", "unidad", "activo"],
       fk=("id_dispositivo", "dispositivo"))
 
@@ -367,15 +427,25 @@ def disp_editar(request):
 
 
 @ruta("/dispositivos/{id:int}", "DELETE", ADMIN)
-def disp_eliminar(request):
+def disp_desactivar(request):
     i = request.path_params["id"]
     with db.connect() as c:
-        d = c.one("SELECT codigo FROM dispositivo WHERE id = ?", (i,))
-        if not d:
+        if not _existe(c, "dispositivo", i):
             return error(404, "No encontrado")
-        _borrar(c, "dispositivo", i)
-        services.auditar(c, request.state.usuario, "dispositivo_eliminado", f"id={i} {d['codigo']}")
-    return ok({"id": i, "eliminado": True})
+        c.update("dispositivo", {"activo": False}, "id = ?", (i,))
+        services.auditar(c, request.state.usuario, "dispositivo_desactivado", f"id={i}")
+    return ok({"id": i, "activo": False})
+
+
+@ruta("/dispositivos/{id:int}/activar", "POST", ADMIN)
+def disp_activar(request):
+    i = request.path_params["id"]
+    with db.connect() as c:
+        if not _existe(c, "dispositivo", i):
+            return error(404, "No encontrado")
+        c.update("dispositivo", {"activo": True}, "id = ?", (i,))
+        services.auditar(c, request.state.usuario, "dispositivo_reactivado", f"id={i}")
+    return ok({"id": i, "activo": True})
 
 
 @ruta("/dispositivos/{id:int}/regenerar-clave", "POST", ADMIN)
@@ -597,8 +667,9 @@ def informe_gestion(request):
             "ORDER BY a.creada_en DESC, a.id DESC", (desde, hasta))
         abiertas = c.one("SELECT COUNT(*) AS n FROM alerta WHERE estado <> 'Resuelta'")["n"]
         eventos = c.one("SELECT COUNT(*) AS n FROM evento_bitacora WHERE categoria = 'agricola' AND creado_en >= ? AND creado_en <= ?", (desde, hasta))["n"]
-        cultivos = c.all("SELECT cu.id, cu.nombre, cu.especie, cu.fecha_inicio, cu.id_sistema, s.nombre AS sistema "
-                         "FROM cultivo cu JOIN sistema s ON s.id = cu.id_sistema WHERE cu.activo = ? ORDER BY cu.id", (True,))
+        cultivos = c.all("SELECT cu.id, cu.nombre, cu.especie, cu.fecha_inicio, cu.id_sistema, s.nombre AS sistema, ue.nombre AS encargado "
+                         "FROM cultivo cu JOIN sistema s ON s.id = cu.id_sistema LEFT JOIN usuario ue ON ue.id = cu.id_encargado "
+                         "WHERE cu.activo = ? ORDER BY cu.id", (True,))
         med_sis = {f["id_sistema"]: f["n"] for f in c.all(
             "SELECT d.id_sistema, COUNT(m.id) AS n FROM dispositivo d JOIN sensor se ON se.id_dispositivo = d.id "
             "JOIN medicion m ON m.id_sensor = se.id AND m.marca_tiempo >= ? AND m.marca_tiempo <= ? "
@@ -610,7 +681,31 @@ def informe_gestion(request):
         bit_cul = {f["id_cultivo"]: f["n"] for f in c.all(
             "SELECT id_cultivo, COUNT(*) AS n FROM evento_bitacora WHERE categoria = 'agricola' AND id_cultivo IS NOT NULL "
             "AND creado_en >= ? AND creado_en <= ? GROUP BY id_cultivo", (desde, hasta))}
+        encs = c.all("SELECT u.id, u.nombre FROM usuario u JOIN rol r ON r.id = u.id_rol WHERE r.nombre = 'Encargado' AND u.activo = ? ORDER BY u.nombre", (True,))
+        a_cargo = {f["id_encargado"]: f["n"] for f in c.all(
+            "SELECT id_encargado, COUNT(*) AS n FROM cultivo WHERE activo = ? AND id_encargado IS NOT NULL GROUP BY id_encargado", (True,))}
+        bit_usr = {f["id_usuario"]: f["n"] for f in c.all(
+            "SELECT id_usuario, COUNT(*) AS n FROM evento_bitacora WHERE categoria = 'agricola' AND id_usuario IS NOT NULL "
+            "AND creado_en >= ? AND creado_en <= ? GROUP BY id_usuario", (desde, hasta))}
+        gest = c.all("SELECT id_usuario, estado, creada_en, actualizada_en FROM alerta WHERE id_usuario IS NOT NULL "
+                     "AND creada_en >= ? AND creada_en <= ?", (desde, hasta))
+        abiertas_enc = {f["id_encargado"]: f["n"] for f in c.all(
+            "SELECT cu.id_encargado, COUNT(DISTINCT a.id) AS n FROM cultivo cu JOIN dispositivo d ON d.id_sistema = cu.id_sistema "
+            "JOIN alerta a ON a.id_dispositivo = d.id AND a.estado <> 'Resuelta' "
+            "WHERE cu.activo = ? AND cu.id_encargado IS NOT NULL GROUP BY cu.id_encargado", (True,))}
         services.auditar(c, request.state.usuario, "informe_gestion", f"{desde}..{hasta}")
+    por_encargado = []
+    for e in encs:
+        mias = [g for g in gest if g["id_usuario"] == e["id"]]
+        res = [g for g in mias if g["estado"] == "Resuelta" and g["actualizada_en"]]
+        mins = [max((db.parse_iso(db.iso(g["actualizada_en"])) - db.parse_iso(db.iso(g["creada_en"]))).total_seconds() / 60, 0) for g in res]
+        por_encargado.append({
+            "encargado": e["nombre"], "cultivos_a_cargo": int(a_cargo.get(e["id"], 0)),
+            "alertas_abiertas_en_sus_cultivos": int(abiertas_enc.get(e["id"], 0)),
+            "alertas_atendidas": len(mias), "alertas_resueltas": len(res),
+            "pct_resolucion": round(100.0 * len(res) / len(mias), 1) if mias else None,
+            "tiempo_medio_resolucion_min": round(sum(mins) / len(mins), 1) if mins else None,
+            "registros_bitacora": int(bit_usr.get(e["id"], 0))})
     tiempos = []
     for a in alertas:
         if a["estado"] == "Resuelta" and a["actualizada_en"]:
@@ -640,7 +735,8 @@ def informe_gestion(request):
         "por_dispositivo": [{"dispositivo": d["codigo"], "mediciones": d["n"]} for d in por_disp],
         "dispositivos": [{"codigo": d["codigo"], "nombre": d["nombre"], "sistema": d["sistema"], "ultima_comunicacion": db.iso(d["ultima_comunicacion"])} for d in disp],
         "alertas": [_limpiar(a) for a in alertas[:30]],
-        "por_cultivo": [{"cultivo": cu["nombre"], "especie": cu["especie"], "sistema": cu["sistema"],
+        "por_encargado": por_encargado,
+        "por_cultivo": [{"cultivo": cu["nombre"], "especie": cu["especie"], "sistema": cu["sistema"], "encargado": cu["encargado"],
                          "dispositivos": sum(1 for d in disp if d["id_sistema"] == cu["id_sistema"]),
                          "mediciones": int(med_sis.get(cu["id_sistema"], 0)),
                          "alertas": int((ale_sis.get(cu["id_sistema"]) or {}).get("n") or 0),

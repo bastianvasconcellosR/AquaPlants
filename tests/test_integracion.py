@@ -6,8 +6,6 @@ import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
 
-import sqlite3
-
 import jwt
 
 from tests.base import ADMIN_EMAIL, ADMIN_PASS, ENC, JWT_SECRET, OFFLINE_S, Base, caso, http
@@ -40,8 +38,8 @@ class Autenticacion(Base):
         st, u = self.api("POST", "/usuarios", {"nombre": "Temporal", "email": email, "clave": "Temporal2026x", "rol": "Encargado"}, t)
         self.api("DELETE", f"/usuarios/{u['id']}", token=t)
         st, js = self.login(email, "Temporal2026x")
-        caso("PI-03", "CU01", "Usuario eliminado (borrado real) no puede ingresar", "401: la cuenta ya no existe en la base de datos",
-             f"{st} {js.get('error')}", st == 401)
+        caso("PI-03", "CU01", "Usuario desactivado no puede ingresar (FA2)", "403 con aviso de contactar al Administrador",
+             f"{st} {js.get('error')}", st == 403)
 
     def test_pi04_token_expirado(self):
         exp = jwt.encode({"sub": "1", "rol": "Administrador", "iat": int(time.time()) - 7200, "exp": int(time.time()) - 3600}, JWT_SECRET, algorithm="HS256")
@@ -126,8 +124,8 @@ class Ingesta(Base):
         formato = self.api("POST", "/mediciones", {"variable": "ph", "valor": 6}, key="cualquier-cosa")[0]
         self.api("DELETE", f"/dispositivos/{e['disp']}", token=t)
         baja = self.api("POST", "/mediciones", {"variable": "ph", "valor": 6}, key=e["key"])[0]
-        caso("PI-15", "CU09", "API Key ausente, alterada, mal formada y de dispositivo eliminado", "401, 401, 401 y 401",
-             f"{sin}, {mala}, {formato}, {baja}", (sin, mala, formato, baja) == (401, 401, 401, 401))
+        caso("PI-15", "CU09", "API Key ausente, alterada, mal formada y de dispositivo desactivado", "401, 401, 401 y 403",
+             f"{sin}, {mala}, {formato}, {baja}", (sin, mala, formato, baja) == (401, 401, 401, 403))
 
     def test_pi16_lote(self):
         e = self.entorno(); base = ahora() - timedelta(minutes=30)
@@ -306,13 +304,11 @@ class Administracion(Base):
         mala = self.api("POST", "/cultivos", {"id_sistema": 999999, "nombre": "X"}, t)[0]
         fecha = self.api("POST", "/cultivos", {"id_sistema": s["id"], "nombre": "X", "fecha_inicio": "01/10/2026"}, t)[0]
         baja = self.api("DELETE", f"/cultivos/{c['id']}", token=t)
-        cu = self.api("GET", f"/cultivos/{c['id']}", token=t)[0]
-        bd = sqlite3.connect(Base.srv.dir + "/t.db")
-        en_bd = bd.execute("SELECT COUNT(*) FROM cultivo WHERE id = ?", (c["id"],)).fetchone()[0]; bd.close()
-        caso("PI-33", "CU07", "CRUD de sistema y cultivo (crear, leer, editar, eliminar) con validaciones",
-             "201, 200, nombre editado, 201; cultivo con sistema inexistente 422; fecha mal formada 422; eliminación real (DELETE 200; después GET 404 y 0 filas en la tabla)",
-             f"{st}, {ed}, «{uno['nombre']}», {st2}; {mala}; {fecha}; DELETE={baja[0]} GET={cu} filas_en_bd={en_bd}",
-             st == 201 and ed == 200 and uno["nombre"].endswith("editado") and st2 == 201 and mala == 422 and fecha == 422 and baja[0] == 200 and cu == 404 and en_bd == 0)
+        _, cu = self.api("GET", f"/cultivos/{c['id']}", token=t)
+        caso("PI-33", "CU07", "CRUD de sistema y cultivo (crear, leer, editar, desactivar) con validaciones",
+             "201, 200, nombre editado, 201; cultivo con sistema inexistente 422; fecha mal formada 422; baja lógica (el registro permanece con activo=false)",
+             f"{st}, {ed}, «{uno['nombre']}», {st2}; {mala}; {fecha}; baja={baja[0]} activo={cu['activo']}",
+             st == 201 and ed == 200 and uno["nombre"].endswith("editado") and st2 == 201 and mala == 422 and fecha == 422 and baja[0] == 200 and cu["activo"] is False)
 
     def test_pi34_dispositivo_api_key(self):
         e = self.entorno(); t = self.token("admin")
@@ -464,6 +460,82 @@ class FlujoCompleto(Base):
              "6 ciclos → 6 mediciones por sensor en la BD; la salida muestra SIN RED y un envío de lote",
              f"rc={rc}; caudal={h['total']} puntos; 'SIN RED' en salida={'SIN RED' in out}; 'lote' en salida={'/mediciones/lote' in out or 'lote de' in out}",
              rc == 0 and h["total"] == 6 and "SIN RED" in out and "lote de" in out)
+
+class Retroalimentacion(Base):
+    """Observaciones del profesor tras la ES3: asignar encargado, intentos configurables, comparación, activo/inactivo."""
+
+    def _usuario(self, rol, clave="ClaveBuena2026"):
+        t = self.token("admin"); mail = f"u{uuid.uuid4().hex[:8]}@aquaplants.cl"
+        st, u = self.api("POST", "/usuarios", {"nombre": f"Prueba {rol}", "email": mail, "clave": clave, "rol": rol}, t)
+        assert st == 201, u
+        return u["id"], mail, clave
+
+    def test_pi46_asignar_encargado(self):
+        t, sup, enc = self.token("admin"), self.token("sup"), self.token("enc")
+        e = self.entorno(); _, c = self.api("POST", "/cultivos", {"id_sistema": e["sistema"], "nombre": "Cultivo asignable"}, t)
+        uid, _, _ = self._usuario("Encargado"); aid, _, _ = self._usuario("Supervisor")
+        ok = self.api("PUT", f"/cultivos/{c['id']}/encargado", {"id_encargado": uid}, sup)[0]
+        _, uno = self.api("GET", f"/cultivos/{c['id']}", token=enc)
+        prohibido = self.api("PUT", f"/cultivos/{c['id']}/encargado", {"id_encargado": uid}, enc)[0]
+        no_enc = self.api("PUT", f"/cultivos/{c['id']}/encargado", {"id_encargado": aid}, sup)[0]
+        quitar = self.api("PUT", f"/cultivos/{c['id']}/encargado", {"id_encargado": None}, sup)[0]
+        _, uno2 = self.api("GET", f"/cultivos/{c['id']}", token=enc)
+        caso("PI-46", "CU07", "El Supervisor asigna un encargado a un cultivo (y puede quitarlo); el Encargado no puede; solo usuarios con rol Encargado",
+             "200; el cultivo muestra al encargado; Encargado 403; asignar a un Supervisor 422; quitar 200 y queda sin encargado",
+             f"{ok}; encargado={uno.get('encargado')!r}; {prohibido}; {no_enc}; {quitar}; después={uno2.get('id_encargado')}",
+             ok == 200 and uno["id_encargado"] == uid and prohibido == 403 and no_enc == 422 and quitar == 200 and uno2["id_encargado"] is None)
+
+    def test_pi47_intentos_configurables(self):
+        t, sup = self.token("admin"), self.token("sup")
+        _, antes = self.api("GET", "/configuracion", token=t)
+        fuera = self.api("PUT", "/configuracion", {"max_intentos": 2, "bloqueo_minutos": 15}, t)[0]
+        no_admin = self.api("PUT", "/configuracion", {"max_intentos": 4, "bloqueo_minutos": 15}, sup)[0]
+        try:
+            ok = self.api("PUT", "/configuracion", {"max_intentos": 3, "bloqueo_minutos": 10}, t)[0]
+            _, _, mail, clave = (None,) + self._usuario("Encargado")
+            codigos = [self.login(mail, "mala-clave-1")[0] for _ in range(3)]
+            correcta = self.login(mail, clave)[0]
+        finally:
+            self.api("PUT", "/configuracion", antes, t)
+        _, despues = self.api("GET", "/configuracion", token=t)
+        caso("PI-47", "CU06", "El Administrador cambia los intentos de contraseña permitidos (3 a 10) y el bloqueo se aplica con el nuevo valor",
+             "valor fuera de rango 422; Supervisor 403; con 3 intentos: 401 ×3 y luego 423; la configuración se restaura",
+             f"{fuera}; {no_admin}; guardar {ok}; {codigos} → {correcta}; restaurada={despues == antes}",
+             fuera == 422 and no_admin == 403 and ok == 200 and codigos == [401] * 3 and correcta == 423 and despues == antes)
+
+    def test_pi48_activo_inactivo(self):
+        t, enc = self.token("admin"), self.token("enc")
+        uid, mail, clave = self._usuario("Encargado")
+        self.api("DELETE", f"/usuarios/{uid}", token=t)
+        inactivo = self.login(mail, clave)[0]
+        prohibido = self.api("POST", f"/usuarios/{uid}/activar", token=enc)[0]
+        self.api("POST", f"/usuarios/{uid}/activar", token=t)
+        activo = self.login(mail, clave)[0]
+        e = self.entorno(); _, c = self.api("POST", "/cultivos", {"id_sistema": e["sistema"], "nombre": "Se desactiva"}, t)
+        self.api("DELETE", f"/cultivos/{c['id']}", token=t)
+        off = self.api("GET", f"/cultivos/{c['id']}", token=t)[1]["activo"]
+        self.api("POST", f"/cultivos/{c['id']}/activar", token=t)
+        on = self.api("GET", f"/cultivos/{c['id']}", token=t)[1]["activo"]
+        caso("PI-48", "CU07", "Eliminar desactiva (no borra) y se puede reactivar; solo el Administrador reactiva",
+             "usuario desactivado no entra (403); Encargado no reactiva (403); reactivado entra (200); cultivo activo=false y luego true",
+             f"{inactivo}; {prohibido}; {activo}; cultivo {off} → {on}",
+             inactivo == 403 and prohibido == 403 and activo == 200 and off is False and on is True)
+
+    def test_pi49_comparacion_encargados(self):
+        t = self.token("admin"); e = self.entorno()
+        uid, mail, clave = self._usuario("Encargado"); _, c = self.api("POST", "/cultivos", {"id_sistema": e["sistema"], "nombre": "Cultivo comparado", "id_encargado": uid}, t)
+        self.api("POST", "/mediciones", {"variable": "ph", "valor": 7.9}, key=e["key"])
+        al = self.alertas(e, "Pendiente")[0]
+        tk = self.login(mail, clave)[1]["token"]
+        self.api("PATCH", f"/alertas/{al['id']}", {"estado": "Resuelta", "causa": "Se ajustó la dosificación"}, tk)
+        self.api("POST", "/bitacora", {"id_cultivo": c["id"], "accion": "Riego", "detalle": "Revisión"}, tk)
+        st, inf = self.api("GET", "/informes/gestion", token=t)
+        fila = next((x for x in inf.get("por_encargado", []) if x["encargado"] == "Prueba Encargado" and x["cultivos_a_cargo"] == 1), None)
+        caso("PI-49", "CU12", "El informe de gestión compara a los encargados: cultivos a cargo, alertas resueltas, tiempo de resolución y bitácora",
+             "200; el encargado figura con 1 cultivo, 1 alerta resuelta (100 %), tiempo medio y 1 registro de bitácora",
+             f"{st}; {fila}",
+             st == 200 and fila is not None and fila["alertas_resueltas"] == 1 and fila["pct_resolucion"] == 100.0
+             and fila["tiempo_medio_resolucion_min"] is not None and fila["registros_bitacora"] == 1)
 
 
 if __name__ == "__main__":

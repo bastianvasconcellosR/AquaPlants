@@ -22,6 +22,18 @@ def auditar(c, usuario, accion, detalle=None, id_cultivo=None, categoria="audito
     })
 
 
+def leer_config(c):
+    """Intentos máximos de contraseña y minutos de bloqueo: valor guardado en la BD o, si no existe, el valor por defecto."""
+    filas = {f["clave"]: f["valor"] for f in c.all("SELECT clave, valor FROM configuracion")}
+    def num(k, defecto):
+        try:
+            return int(filas[k])
+        except (KeyError, ValueError):
+            return defecto
+    return {"max_intentos": num("max_intentos", config.MAX_INTENTOS),
+            "bloqueo_minutos": num("bloqueo_minutos", config.BLOQUEO_MINUTOS)}
+
+
 # ---------------------------------------------------------------- alertas
 def _severidad(valor, mn, mx):
     ancho = mx - mn

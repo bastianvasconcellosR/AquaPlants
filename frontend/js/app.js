@@ -106,7 +106,7 @@ $('#form-login').addEventListener('submit', async (ev) => {
 function entrar() {
   $('#vista-login').hidden = true; $('#app').hidden = false;
   $('#usuario-info').textContent = `${usuario.nombre} · ${usuario.rol}`;
-  const items = [['estado', 'Estado actual'], ['alertas', 'Alertas'], ['historico', 'Históricos'], ['bitacora', 'Bitácora']];
+  const items = [['estado', 'Estado actual'], ['alertas', 'Alertas'], ['historico', 'Históricos'], ['cultivos', 'Cultivos'], ['bitacora', 'Bitácora']];
   if (['Administrador', 'Supervisor'].includes(usuario.rol)) items.push(['informe', 'Informe de gestión']);
   if (usuario.rol === 'Administrador') items.push(['admin', 'Administración']);
   $('#nav').innerHTML = items.map(([k, t]) => `<button data-v="${k}">${t}</button>`).join('');
@@ -123,7 +123,57 @@ $('#nav').addEventListener('click', (e) => { const b = e.target.closest('button[
 function irA(v) {
   vista = v; clearInterval(timerEstado);
   document.querySelectorAll('#nav button').forEach(b => { b.dataset.v === v ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'); });
-  ({ estado: vEstado, alertas: vAlertas, historico: vHistorico, bitacora: vBitacora, informe: vInforme, admin: vAdmin })[v]();
+  ({ estado: vEstado, alertas: vAlertas, historico: vHistorico, bitacora: vBitacora, cultivos: vCultivos, informe: vInforme, admin: vAdmin })[v]();
+}
+
+/* ================= Seguridad (Administrador) ================= */
+async function adminSeguridad(body) {
+  try {
+    const cfg = await API.get('/configuracion');
+    body.innerHTML = `<h2 style="margin-top:0">Política de inicio de sesión</h2>
+      <p class="sub">Define cuántas veces puede equivocarse un usuario con su contraseña antes de que la cuenta se bloquee temporalmente.</p>
+      <form id="f-seg" class="form-inline" style="display:grid;gap:12px;max-width:380px">
+        <label>Intentos fallidos permitidos (3 a 10)<input id="s-int" type="number" min="3" max="10" step="1" value="${esc(cfg.max_intentos)}" required></label>
+        <label>Minutos de bloqueo (1 a 1440)<input id="s-min" type="number" min="1" max="1440" step="1" value="${esc(cfg.bloqueo_minutos)}" required></label>
+        <div><button class="btn" type="submit">Guardar</button></div>
+      </form>`;
+    $('#f-seg').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        await API.put('/configuracion', { max_intentos: Number($('#s-int').value), bloqueo_minutos: Number($('#s-min').value) });
+        toast('Configuración guardada');
+      } catch (e) { toast(e.message, true); }
+    });
+  } catch (e) { body.innerHTML = errorBox(e.message); }
+}
+
+/* ================= Cultivos y encargados ================= */
+let soloMios = false;
+async function vCultivos() {
+  const m = $('#contenido'), puede = ['Administrador', 'Supervisor'].includes(usuario.rol), esEnc = usuario.rol === 'Encargado';
+  m.innerHTML = `<h1>Cultivos</h1><p class="sub">${puede ? 'Asigne a cada cultivo el encargado responsable.' : 'Cultivos activos y su encargado.'}</p><div id="c-body">${cargando()}</div>`;
+  try {
+    const [cul, enc] = await Promise.all([API.get('/cultivos'), puede ? API.get('/encargados') : Promise.resolve([])]);
+    const sis = Object.fromEntries((await API.get('/sistemas')).map(s => [s.id, s.nombre]));
+    const pintar = () => {
+      const filas = cul.filter(c => c.activo && (!soloMios || c.id_encargado === usuario.id));
+      $('#c-body').innerHTML = `<div class="card">${esEnc ? `<label class="inline"><input type="checkbox" id="c-mios" ${soloMios ? 'checked' : ''}> Solo mis cultivos</label>` : ''}
+        ${filas.length ? `<div class="table-wrap"><table><thead><tr><th>Cultivo</th><th>Especie</th><th>Sistema</th><th>Encargado</th>${puede ? '<th></th>' : ''}</tr></thead><tbody>
+        ${filas.map(c => `<tr><td>${esc(c.nombre)}</td><td class="hint">${esc(c.especie || '—')}</td><td>${esc(sis[c.id_sistema] ?? c.id_sistema)}</td>
+          <td>${puede ? `<select data-cid="${c.id}" aria-label="Encargado de ${esc(c.nombre)}"><option value="">— Sin encargado —</option>${enc.map(u => `<option value="${u.id}"${u.id === c.id_encargado ? ' selected' : ''}>${esc(u.nombre)}</option>`).join('')}</select>` : esc(c.encargado || '—')}</td>
+          ${puede ? `<td><button class="btn sec sm" data-asig="${c.id}">Guardar</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : vacio(soloMios ? 'No tiene cultivos asignados.' : 'Sin cultivos activos.')}</div>`;
+      const ck = $('#c-mios'); if (ck) ck.addEventListener('change', () => { soloMios = ck.checked; pintar(); });
+      document.querySelectorAll('[data-asig]').forEach(b => b.addEventListener('click', async () => {
+        const id = b.dataset.asig, v = document.querySelector(`select[data-cid="${id}"]`).value;
+        try {
+          await API.put(`/cultivos/${id}/encargado`, { id_encargado: v === '' ? null : Number(v) });
+          const c = cul.find(x => String(x.id) === id); c.id_encargado = v === '' ? null : Number(v);
+          c.encargado = (enc.find(u => String(u.id) === v) || {}).nombre || null; toast('Encargado asignado');
+        } catch (e) { toast(e.message, true); }
+      }));
+    };
+    pintar();
+  } catch (e) { $('#c-body').innerHTML = errorBox(e.message); }
 }
 
 /* ================= CU02 Estado actual ================= */
@@ -279,8 +329,10 @@ async function vInforme() {
         ${r.dispositivos.map(d => `<tr><td>${esc(d.codigo)} · ${esc(d.nombre)}</td><td>${esc(d.sistema)}</td><td>${esc((r.por_dispositivo.find(p => p.dispositivo === d.codigo) || {}).mediciones ?? 0)}</td><td>${esc(fmtFecha(d.ultima_comunicacion))}</td></tr>`).join('')}</tbody></table></div>
         <h2>4. Alertas del período</h2>${r.alertas.length ? `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Dispositivo</th><th>Severidad</th><th>Detalle</th><th>Estado</th><th>Causa</th></tr></thead><tbody>
         ${r.alertas.map(a => `<tr><td>${esc(fmtFecha(a.creada_en))}</td><td>${esc(a.dispositivo)}</td><td>${esc(a.severidad)}</td><td>${esc(a.mensaje)}</td><td>${esc(a.estado)}</td><td>${esc(a.causa ?? '—')}</td></tr>`).join('')}</tbody></table></div>` : vacio('Sin alertas en el período.')}
-        <h2>5. Cultivos y su operación</h2><p class="sub" style="margin-top:0">Cada cultivo recibe las mediciones y alertas de los dispositivos de su sistema.</p>${(r.por_cultivo || []).length ? `<div class="table-wrap"><table><thead><tr><th>Cultivo</th><th>Especie</th><th>Sistema</th><th>Dispositivos</th><th>Mediciones</th><th>Alertas</th><th>Abiertas</th><th>Bitácora</th></tr></thead><tbody>
-        ${r.por_cultivo.map(c => `<tr><td>${esc(c.cultivo)}</td><td class="hint">${esc(c.especie || '—')}</td><td>${esc(c.sistema)}</td><td>${esc(c.dispositivos)}</td><td>${esc(c.mediciones)}</td><td>${esc(c.alertas)}</td><td>${esc(c.alertas_abiertas)}</td><td>${esc(c.registros_bitacora)}</td></tr>`).join('')}</tbody></table></div>` : vacio('Sin cultivos activos.')}
+        <h2>5. Cultivos y su operación</h2><p class="sub" style="margin-top:0">Cada cultivo recibe las mediciones y alertas de los dispositivos de su sistema.</p>${(r.por_cultivo || []).length ? `<div class="table-wrap"><table><thead><tr><th>Cultivo</th><th>Especie</th><th>Sistema</th><th>Encargado</th><th>Dispositivos</th><th>Mediciones</th><th>Alertas</th><th>Abiertas</th><th>Bitácora</th></tr></thead><tbody>
+        ${r.por_cultivo.map(c => `<tr><td>${esc(c.cultivo)}</td><td class="hint">${esc(c.especie || '—')}</td><td>${esc(c.sistema)}</td><td>${esc(c.encargado || '—')}</td><td>${esc(c.dispositivos)}</td><td>${esc(c.mediciones)}</td><td>${esc(c.alertas)}</td><td>${esc(c.alertas_abiertas)}</td><td>${esc(c.registros_bitacora)}</td></tr>`).join('')}</tbody></table></div>` : vacio('Sin cultivos activos.')}
+        <h2>6. Comparación de encargados</h2><p class="sub" style="margin-top:0">Alertas atendidas son las que el encargado gestionó en el período; el tiempo de resolución va desde que se creó la alerta hasta que la resolvió.</p>${(r.por_encargado || []).length ? `<div class="table-wrap"><table><thead><tr><th>Encargado</th><th>Cultivos a cargo</th><th>Alertas atendidas</th><th>Resueltas</th><th>% resolución</th><th>Tiempo medio de resolución</th><th>Abiertas en sus cultivos</th><th>Registros de bitácora</th></tr></thead><tbody>
+        ${r.por_encargado.map(e => `<tr><td>${esc(e.encargado)}</td><td>${esc(e.cultivos_a_cargo)}</td><td>${esc(e.alertas_atendidas)}</td><td>${esc(e.alertas_resueltas)}</td><td>${e.pct_resolucion === null ? '—' : esc(e.pct_resolucion) + ' %'}</td><td>${e.tiempo_medio_resolucion_min === null ? '—' : esc(e.tiempo_medio_resolucion_min) + ' min'}</td><td>${esc(e.alertas_abiertas_en_sus_cultivos)}</td><td>${esc(e.registros_bitacora)}</td></tr>`).join('')}</tbody></table></div>` : vacio('Sin encargados activos.')}
         <p class="sub">Registros de bitácora agrícola en el período: ${esc(x.registros_bitacora_agricola)}.</p></div>`;
     } catch (e) { $('#i-body').innerHTML = errorBox(e.message); }
   };
@@ -320,10 +372,11 @@ async function vBitacora(cat = 'agricola') {
 const ENT = {
   usuarios: { titulo: 'Usuarios', ruta: '/usuarios', cols: [['nombre', 'Nombre'], ['email', 'Correo'], ['rol', 'Rol'], ['activo', 'Activo']] },
   sistemas: { titulo: 'Sistemas', ruta: '/sistemas', cols: [['nombre', 'Nombre'], ['ubicacion', 'Ubicación'], ['activo', 'Activo']] },
-  cultivos: { titulo: 'Cultivos', ruta: '/cultivos', cols: [['nombre', 'Nombre'], ['especie', 'Especie'], ['fecha_inicio', 'Inicio'], ['activo', 'Activo']] },
+  cultivos: { titulo: 'Cultivos', ruta: '/cultivos', cols: [['nombre', 'Nombre'], ['especie', 'Especie'], ['fecha_inicio', 'Inicio'], ['encargado', 'Encargado'], ['activo', 'Activo']] },
   dispositivos: { titulo: 'Dispositivos', ruta: '/dispositivos', cols: [['codigo', 'Código'], ['nombre', 'Nombre'], ['ultima_comunicacion', 'Última comunicación'], ['activo', 'Activo']] },
   sensores: { titulo: 'Sensores', ruta: '/sensores', cols: [['id_dispositivo', 'Dispositivo'], ['variable', 'Variable'], ['unidad', 'Unidad'], ['activo', 'Activo']] },
   umbrales: { titulo: 'Umbrales', ruta: '/umbrales', cols: [['id_sistema', 'Sistema'], ['variable', 'Variable'], ['minimo', 'Mínimo'], ['maximo', 'Máximo']], sinBorrar: true },
+  seguridad: { titulo: 'Seguridad', ruta: '/configuracion', especial: true },
   respaldos: { titulo: 'Respaldos', ruta: '/respaldos', cols: [['creado_en', 'Fecha'], ['tipo', 'Tipo'], ['archivo', 'Archivo'], ['tamano', 'Tamaño (B)'], ['estado', 'Estado']], solo: true },
 };
 let adminTab = 'usuarios', adminDatos = {}, adminVerElim = false;
@@ -339,9 +392,10 @@ async function vAdmin() {
 
 async function adminTabla() {
   const ent = ENT[adminTab], body = $('#a-body');
+  if (ent.especial) return adminSeguridad(body);
   try {
-    const [filas, sis, disp] = await Promise.all([API.get(ent.ruta), API.get('/sistemas'), API.get('/dispositivos')]);
-    adminDatos = { filas, sis, disp };
+    const [filas, sis, disp, enc] = await Promise.all([API.get(ent.ruta), API.get('/sistemas'), API.get('/dispositivos'), API.get('/encargados')]);
+    adminDatos = { filas, sis, disp, enc };
     const mapa = { id_sistema: Object.fromEntries(sis.map(s => [s.id, s.nombre])), id_dispositivo: Object.fromEntries(disp.map(d => [d.id, d.codigo])) };
     const celda = (f, k) => {
       let v = f[k];
@@ -357,7 +411,7 @@ async function adminTabla() {
       ${tieneActivo ? `<label class="inline"><input type="checkbox" id="a-verelim" ${adminVerElim ? 'checked' : ''}> Mostrar inactivos</label>` : ''}</div>
       ${visibles.length ? `<div class="table-wrap"><table><thead><tr>${ent.cols.map(c => `<th>${c[1]}</th>`).join('')}${ent.solo ? '' : '<th></th>'}</tr></thead><tbody>
       ${visibles.map(f => `<tr>${ent.cols.map(c => `<td>${celda(f, c[0])}</td>`).join('')}${ent.solo ? '' : `<td style="white-space:nowrap"><button class="btn sec sm" data-x="edit" data-id="${f.id}">Editar</button>
-        ${!ent.sinBorrar && f.activo ? ` <button class="btn sec sm" data-x="del" data-id="${f.id}">Eliminar</button>` : ''}${adminTab === 'dispositivos' ? ` <button class="btn sec sm" data-x="key" data-id="${f.id}">Regenerar clave</button>` : ''}</td>`}</tr>`).join('')}
+        ${!ent.sinBorrar ? (f.activo ? ` <button class="btn sec sm" data-x="del" data-id="${f.id}">Desactivar</button>` : ` <button class="btn sec sm" data-x="act" data-id="${f.id}">Reactivar</button>`) : ''}${adminTab === 'dispositivos' ? ` <button class="btn sec sm" data-x="key" data-id="${f.id}">Regenerar clave</button>` : ''}</td>`}</tr>`).join('')}
       </tbody></table></div>` : vacio('Sin registros.')}`;
     const ck = $('#a-verelim');
     if (ck) ck.addEventListener('change', () => { adminVerElim = ck.checked; adminTabla(); });
@@ -365,7 +419,8 @@ async function adminTabla() {
 }
 
 function camposDe(tab, edit) {
-  const { sis, disp } = adminDatos;
+  const { sis, disp, enc } = adminDatos;
+  const optEnc = [{ v: '', t: '— Sin encargado —' }, ...enc.map(u => ({ v: u.id, t: u.nombre }))];
   const optSis = sis.map(s => ({ v: s.id, t: s.nombre })), optDisp = disp.map(d => ({ v: d.id, t: d.codigo }));
   const optVar = Object.entries(VARIABLES).map(([v, t]) => ({ v, t }));
   return {
@@ -374,7 +429,7 @@ function camposDe(tab, edit) {
       { n: 'rol', etq: 'Rol', tipo: 'select', opciones: ['Administrador', 'Supervisor', 'Encargado'].map(r => ({ v: r, t: r })) }, { n: 'activo', etq: 'Activo', tipo: 'checkbox' }],
     sistemas: [{ n: 'nombre', etq: 'Nombre', req: true }, { n: 'ubicacion', etq: 'Ubicación' }, { n: 'activo', etq: 'Activo', tipo: 'checkbox' }],
     cultivos: [{ n: 'id_sistema', etq: 'Sistema', tipo: 'select', opciones: optSis, req: true }, { n: 'nombre', etq: 'Nombre', req: true }, { n: 'especie', etq: 'Especie' },
-      { n: 'fecha_inicio', etq: 'Fecha de inicio', tipo: 'date' }, { n: 'activo', etq: 'Activo', tipo: 'checkbox' }],
+      { n: 'fecha_inicio', etq: 'Fecha de inicio', tipo: 'date' }, { n: 'id_encargado', etq: 'Encargado', tipo: 'select', opciones: optEnc }, { n: 'activo', etq: 'Activo', tipo: 'checkbox' }],
     dispositivos: [{ n: 'id_sistema', etq: 'Sistema', tipo: 'select', opciones: optSis, req: true }, { n: 'codigo', etq: 'Código (único)', req: true, ph: 'AB-003' }, { n: 'nombre', etq: 'Nombre', req: true },
       { n: 'tipo', etq: 'Tipo', def: 'controlador' }, ...(edit ? [] : [{ n: 'variables', etq: 'Sensores a registrar', tipo: 'multi', opciones: optVar }]), { n: 'activo', etq: 'Activo', tipo: 'checkbox' }],
     sensores: [{ n: 'id_dispositivo', etq: 'Dispositivo', tipo: 'select', opciones: optDisp, req: true }, { n: 'variable', etq: 'Variable', tipo: 'select', opciones: optVar }, { n: 'activo', etq: 'Activo', tipo: 'checkbox' }],
@@ -391,8 +446,11 @@ $('#contenido').addEventListener('click', async (ev) => {
       b.disabled = true; const r = await API.post('/respaldos'); toast('Respaldo ' + r.estado.toLowerCase()); return adminTabla();
     }
     if (b.dataset.x === 'del') {
-      if (!confirm('¿Eliminar este registro definitivamente? Se borra de la base de datos junto con los datos que dependen de él (mediciones, alertas, bitácora). No se puede deshacer.')) return;
-      await API.del(ent.ruta + '/' + id); toast('Registro eliminado de la base de datos'); return adminTabla();
+      if (!confirm('¿Desactivar este registro? Deja de usarse, pero se conserva su historial y podrá reactivarlo cuando quiera.')) return;
+      await API.del(ent.ruta + '/' + id); toast('Registro desactivado'); return adminTabla();
+    }
+    if (b.dataset.x === 'act') {
+      await API.post(ent.ruta + '/' + id + '/activar'); toast('Registro reactivado'); return adminTabla();
     }
     if (b.dataset.x === 'key') {
       if (!confirm('La clave actual dejará de funcionar. ¿Regenerar?')) return;
@@ -402,7 +460,7 @@ $('#contenido').addEventListener('click', async (ev) => {
     const vals = edit ? { ...fila, clave: '' } : {};
     const d = await formulario((edit ? 'Editar ' : 'Nuevo ') + ({usuarios:'usuario',sistemas:'sistema',cultivos:'cultivo',dispositivos:'dispositivo',sensores:'sensor',umbrales:'umbral'})[adminTab], camposDe(adminTab, edit), vals);
     if (!d) return;
-    ['id_sistema', 'id_dispositivo'].forEach(k => { if (k in d) d[k] = Number(d[k]); });
+    ['id_sistema', 'id_dispositivo', 'id_encargado'].forEach(k => { if (k in d) d[k] = (d[k] === null || d[k] === '') ? null : Number(d[k]); });
     if (adminTab === 'usuarios' && !d.clave) delete d.clave;
     if (adminTab === 'sensores') d.unidad = null;
     if (adminTab === 'dispositivos' && edit) delete d.variables;

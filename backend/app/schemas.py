@@ -56,6 +56,16 @@ class CultivoIn(Base):
     especie: Optional[str] = Field(default=None, max_length=80)
     fecha_inicio: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     activo: bool = True
+    id_encargado: Optional[int] = None
+
+
+class AsignacionIn(Base):
+    id_encargado: Optional[int] = None
+
+
+class ConfiguracionIn(Base):
+    max_intentos: int = Field(ge=3, le=10)
+    bloqueo_minutos: int = Field(ge=1, le=1440)
 
 
 class DispositivoIn(Base):

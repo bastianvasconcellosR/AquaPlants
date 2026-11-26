@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS cultivo (
     nombre        VARCHAR(80) NOT NULL,
     especie       VARCHAR(80),
     fecha_inicio  VARCHAR(10),
-    activo        BOOLEAN NOT NULL DEFAULT TRUE
+    activo        BOOLEAN NOT NULL DEFAULT TRUE,
+    id_encargado  INTEGER REFERENCES usuario(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS dispositivo (
@@ -147,6 +148,12 @@ CREATE TABLE IF NOT EXISTS evento_bitacora (
     detalle     VARCHAR(500),
     creado_en   {ts} NOT NULL,
     CONSTRAINT ck_bitacora_cat CHECK (categoria IN ('agricola','auditoria'))
+);
+
+CREATE TABLE IF NOT EXISTS configuracion (
+    clave          VARCHAR(40) PRIMARY KEY,
+    valor          VARCHAR(80) NOT NULL,
+    actualizado_en {ts}
 );
 
 CREATE TABLE IF NOT EXISTS respaldo (
@@ -274,6 +281,16 @@ def db_path_sqlite() -> str:
 ROLES = ["Administrador", "Supervisor", "Encargado"]
 
 
+def _migrar(cur):
+    """Cambios de esquema sobre bases ya creadas (CREATE TABLE IF NOT EXISTS no agrega columnas)."""
+    if config.IS_PG:
+        cur.execute("ALTER TABLE cultivo ADD COLUMN IF NOT EXISTS id_encargado INTEGER REFERENCES usuario(id) ON DELETE RESTRICT")
+    else:
+        cur.execute("PRAGMA table_info(cultivo)")
+        if "id_encargado" not in [r[1] for r in cur.fetchall()]:
+            cur.execute("ALTER TABLE cultivo ADD COLUMN id_encargado INTEGER REFERENCES usuario(id)")
+
+
 def init_db():
     with _lock:
         raw = _new_raw()
@@ -281,6 +298,7 @@ def init_db():
             cur = raw.cursor()
             for stmt in [s for s in _ddl().split(";") if s.strip()]:
                 cur.execute(stmt)
+            _migrar(cur)
             raw.commit()
         finally:
             raw.close()

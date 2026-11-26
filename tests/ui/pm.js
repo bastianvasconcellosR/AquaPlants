@@ -47,7 +47,7 @@ const api = async (m, r, b, h = {}) => {
     // PM-02
     await p.fill('#l-clave', ENC[1]); await p.click('#form-login button'); await p.waitForSelector('#nav button');
     let nav = await p.$$eval('#nav button', e => e.map(x => x.textContent));
-    registrar('PM-02', 'Login correcto del Encargado: menú acorde al rol (sin Administración)', 've Estado, Alertas, Históricos, Bitácora; no ve Administración', nav.join(', '), nav.length === 4 && !nav.includes('Administración'));
+    registrar('PM-02', 'Login correcto del Encargado: menú acorde al rol (sin Administración)', 've Estado, Alertas, Históricos, Cultivos, Bitácora; no ve Administración ni Informe', nav.join(', '), nav.length === 5 && nav.includes('Cultivos') && !nav.includes('Administración'));
     // PM-03: flujo completo medición → API → dashboard
     await api('POST', '/mediciones', { variable: 'ph', valor: 6.2 }, { 'X-API-Key': key });
     await api('POST', '/mediciones', { variable: 'temperatura_agua', valor: 22.5 }, { 'X-API-Key': key });
@@ -117,7 +117,7 @@ const api = async (m, r, b, h = {}) => {
     const ov = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     registrar('PM-13', 'Vista móvil (390 px): sin desplazamiento horizontal de la página', 'scrollWidth ≤ clientWidth', `desborde=${ov}px`, ov <= 1, await shot('pm-13-movil'));
     await p.setViewportSize({ width: 1200, height: 800 });
-    // PM-15 informe de gestión + eliminar (borrado real) en el CRUD
+    // PM-15 informe de gestión + desactivar/reactivar en el CRUD
     await p.setViewportSize({ width: 1200, height: 900 }); await p.goto(URL); await p.evaluate(() => sessionStorage.clear()); await login(ADMIN); await p.click('button[data-v=informe]'); await p.waitForSelector('#i-body h2'); await p.waitForTimeout(500);
     const inf = (await p.textContent('#i-body')).replace(/\s+/g, ' '); const evInf = await shot('pm-15-informe-gestion');
     registrar('PM-15', 'Informe de gestión visible desde la interfaz (Administrador/Supervisor)', 'aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas', inf.slice(0, 110), /Resumen ejecutivo/.test(inf) && /Variables monitoreadas/.test(inf) && /Alertas del período/.test(inf), evInf);

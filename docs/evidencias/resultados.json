@@ -1,5 +1,5 @@
 {
-  "fecha": "2026-11-23T08:14:58",
+  "fecha": "2026-11-26T17:30:41",
   "api": [
     {
       "id": "PI-01",
@@ -20,9 +20,9 @@
     {
       "id": "PI-03",
       "cu": "CU01",
-      "descripcion": "Usuario eliminado (borrado real) no puede ingresar",
-      "esperado": "401: la cuenta ya no existe en la base de datos",
-      "obtenido": "401 Correo o contraseña incorrectos",
+      "descripcion": "Usuario desactivado no puede ingresar (FA2)",
+      "esperado": "403 con aviso de contactar al Administrador",
+      "obtenido": "403 Usuario desactivado. Contacte al Administrador.",
       "estado": "Aprobado"
     },
     {
@@ -38,7 +38,7 @@
       "cu": "CU09",
       "descripcion": "Medición válida se guarda con su marca de tiempo y aparece en el histórico",
       "esperado": "201; el histórico trae 1 punto con ese valor y esa marca",
-      "obtenido": "201; total=1 punto=[{'t': '2026-11-23T11:12:54Z', 'v': 6.2}]",
+      "obtenido": "201; total=1 punto=[{'t': '2026-11-26T20:28:39Z', 'v': 6.2}]",
       "estado": "Aprobado"
     },
     {
@@ -46,7 +46,7 @@
       "cu": "CU09",
       "descripcion": "Sin marca de tiempo, el servidor asigna la hora actual",
       "esperado": "marca dentro de los últimos 30 s",
-      "obtenido": "2026-11-23T11:13:54Z",
+      "obtenido": "2026-11-26T20:29:39Z",
       "estado": "Aprobado"
     },
     {
@@ -116,9 +116,9 @@
     {
       "id": "PI-15",
       "cu": "CU09",
-      "descripcion": "API Key ausente, alterada, mal formada y de dispositivo eliminado",
-      "esperado": "401, 401, 401 y 401",
-      "obtenido": "401, 401, 401, 401",
+      "descripcion": "API Key ausente, alterada, mal formada y de dispositivo desactivado",
+      "esperado": "401, 401, 401 y 403",
+      "obtenido": "401, 401, 401, 403",
       "estado": "Aprobado"
     },
     {
@@ -260,9 +260,9 @@
     {
       "id": "PI-33",
       "cu": "CU07",
-      "descripcion": "CRUD de sistema y cultivo (crear, leer, editar, eliminar) con validaciones",
-      "esperado": "201, 200, nombre editado, 201; cultivo con sistema inexistente 422; fecha mal formada 422; eliminación real (DELETE 200; después GET 404 y 0 filas en la tabla)",
-      "obtenido": "201, 200, «Sistema 949423 editado», 201; 422; 422; DELETE=200 GET=404 filas_en_bd=0",
+      "descripcion": "CRUD de sistema y cultivo (crear, leer, editar, desactivar) con validaciones",
+      "esperado": "201, 200, nombre editado, 201; cultivo con sistema inexistente 422; fecha mal formada 422; baja lógica (el registro permanece con activo=false)",
+      "obtenido": "201, 200, «Sistema f2803b editado», 201; 422; 422; baja=200 activo=False",
       "estado": "Aprobado"
     },
     {
@@ -318,7 +318,7 @@
       "cu": "CU13",
       "descripcion": "Respaldo manual: se genera, queda en el historial; solo Administrador",
       "esperado": "201 estado Completo con tamaño > 0; aparece en el listado; Supervisor 403",
-      "obtenido": "201 {'id': 1, 'archivo': 'respaldo_20261123_111341.sqlite', 'tamano': 311296, 'estado': 'Completo'}; en listado=True; sup=403",
+      "obtenido": "201 {'id': 1, 'archivo': 'respaldo_20261126_202927.sqlite', 'tamano': 319488, 'estado': 'Completo'}; en listado=True; sup=403",
       "estado": "Aprobado"
     },
     {
@@ -326,7 +326,7 @@
       "cu": "—",
       "descripcion": "Endpoint de salud (usado por el despliegue)",
       "esperado": "200 con base de datos ok",
-      "obtenido": "200 {'estado': 'ok', 'base_de_datos': 'ok', 'hora': '2026-11-23T11:13:41Z'}",
+      "obtenido": "200 {'estado': 'ok', 'base_de_datos': 'ok', 'hora': '2026-11-26T20:29:27Z'}",
       "estado": "Aprobado"
     },
     {
@@ -367,6 +367,38 @@
       "descripcion": "Informe de gestión: resumen, variables y alertas del período; solo Admin/Supervisor",
       "esperado": "Supervisor 200 con ≥3 mediciones de pH, ≥1 fuera de rango y ≥1 alerta; Encargado 403; sin token 401; rango invertido 422",
       "obtenido": "200 mediciones=72 pH n=20 fuera=1 alertas=2; enc=403; sin=401; mal=422",
+      "estado": "Aprobado"
+    },
+    {
+      "id": "PI-46",
+      "cu": "CU07",
+      "descripcion": "El Supervisor asigna un encargado a un cultivo (y puede quitarlo); el Encargado no puede; solo usuarios con rol Encargado",
+      "esperado": "200; el cultivo muestra al encargado; Encargado 403; asignar a un Supervisor 422; quitar 200 y queda sin encargado",
+      "obtenido": "200; encargado='Prueba Encargado'; 403; 422; 200; después=None",
+      "estado": "Aprobado"
+    },
+    {
+      "id": "PI-47",
+      "cu": "CU06",
+      "descripcion": "El Administrador cambia los intentos de contraseña permitidos (3 a 10) y el bloqueo se aplica con el nuevo valor",
+      "esperado": "valor fuera de rango 422; Supervisor 403; con 3 intentos: 401 ×3 y luego 423; la configuración se restaura",
+      "obtenido": "422; 403; guardar 200; [401, 401, 401] → 423; restaurada=True",
+      "estado": "Aprobado"
+    },
+    {
+      "id": "PI-48",
+      "cu": "CU07",
+      "descripcion": "Eliminar desactiva (no borra) y se puede reactivar; solo el Administrador reactiva",
+      "esperado": "usuario desactivado no entra (403); Encargado no reactiva (403); reactivado entra (200); cultivo activo=false y luego true",
+      "obtenido": "403; 403; 200; cultivo False → True",
+      "estado": "Aprobado"
+    },
+    {
+      "id": "PI-49",
+      "cu": "CU12",
+      "descripcion": "El informe de gestión compara a los encargados: cultivos a cargo, alertas resueltas, tiempo de resolución y bitácora",
+      "esperado": "200; el encargado figura con 1 cultivo, 1 alerta resuelta (100 %), tiempo medio y 1 registro de bitácora",
+      "obtenido": "200; {'encargado': 'Prueba Encargado', 'cultivos_a_cargo': 1, 'alertas_abiertas_en_sus_cultivos': 0, 'alertas_atendidas': 1, 'alertas_resueltas': 1, 'pct_resolucion': 100.0, 'tiempo_medio_resolucion_min': 0.0, 'registros_bitacora': 1}",
       "estado": "Aprobado"
     },
     {
@@ -430,7 +462,7 @@
       "cu": "CU06",
       "descripcion": "Contraseñas y API Keys no se almacenan ni se devuelven en claro",
       "esperado": "la API no devuelve campos hash/clave/key; BD con hash de contraseñas y SHA-256 de la API Key (no la clave)",
-      "obtenido": "campos filtrados=[]; ejemplo hash=scrypt$djsfZjo…; hash key len=64",
+      "obtenido": "campos filtrados=[]; ejemplo hash=scrypt$8oDWnZw…; hash key len=64",
       "estado": "Aprobado"
     },
     {
@@ -574,8 +606,8 @@
     {
       "id": "PM-02",
       "descripcion": "Login correcto del Encargado: menú acorde al rol (sin Administración)",
-      "esperado": "ve Estado, Alertas, Históricos, Bitácora; no ve Administración",
-      "obtenido": "Estado actual, Alertas, Históricos, Bitácora",
+      "esperado": "ve Estado, Alertas, Históricos, Cultivos, Bitácora; no ve Administración ni Informe",
+      "obtenido": "Estado actual, Alertas, Históricos, Cultivos, Bitácora",
       "estado": "Aprobado",
       "evidencia": ""
     },
@@ -607,7 +639,7 @@
       "id": "PM-06",
       "descripcion": "Histórico: gráfico dibujado con estadísticas; el Encargado no ve «Exportar CSV»",
       "esperado": "canvas con píxeles dibujados, 4 tarjetas de estadísticas y sin botón CSV",
-      "obtenido": "píxeles=175121, csv visible=false",
+      "obtenido": "píxeles=175138, csv visible=false",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-06-historico.png"
     },
@@ -623,7 +655,7 @@
       "id": "PM-08",
       "descripcion": "Pérdida de conexión del navegador con la API: aviso claro, sin pantalla en blanco",
       "esperado": "mensaje «Sin conexión con el servidor…» y/o error legible",
-      "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (23-11-26, 8:14:10 a. m.). Reintentando…",
+      "obtenido": "Sin conexión con el servidor. Se muestran los últimos datos recibidos (26-11-26, 5:29:54 p. m.). Reintentando…",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-08-sin-conexion.png"
     },
@@ -655,7 +687,7 @@
       "id": "PM-12",
       "descripcion": "Respaldo manual desde la UI",
       "esperado": "aparece una fila «manual» con estado Completo",
-      "obtenido": " 23-11-26, 8:14:14 a. m.manualrespaldo_20261123_111414.sqlite311296Completo ",
+      "obtenido": " 26-11-26, 5:29:58 p. m.manualrespaldo_20261126_202958.sqlite319488Completo ",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-12-respaldos.png"
     },
@@ -671,7 +703,7 @@
       "id": "PM-15",
       "descripcion": "Informe de gestión visible desde la interfaz (Administrador/Supervisor)",
       "esperado": "aparecen resumen ejecutivo, variables, desempeño por dispositivo y alertas",
-      "obtenido": "Período: 22-11-26, 8:14:16 a. m. a 23-11-26, 8:14:16 a. m. · Generado por Administrador el 23-11-26, 8:14:16 a",
+      "obtenido": "Período: 25-11-26, 5:30:00 p. m. a 26-11-26, 5:30:00 p. m. · Generado por Administrador el 26-11-26, 5:30:00 p",
       "estado": "Aprobado",
       "evidencia": "docs/evidencias/pm-15-informe-gestion.png"
     },
@@ -701,19 +733,19 @@
     "detalle_errores": [],
     "ingesta": {
       "n": 4000,
-      "media_ms": 42.0,
-      "p50_ms": 7.1,
-      "p95_ms": 201.2,
-      "p99_ms": 342.4,
-      "max_ms": 485.8
+      "media_ms": 32.6,
+      "p50_ms": 6.2,
+      "p95_ms": 150.4,
+      "p99_ms": 240.8,
+      "max_ms": 363.0
     },
     "dashboard": {
       "n": 400,
-      "media_ms": 72.3,
-      "p50_ms": 72.7,
-      "p95_ms": 101.5,
-      "p99_ms": 111.5,
-      "max_ms": 121.3
+      "media_ms": 62.0,
+      "p50_ms": 62.5,
+      "p95_ms": 90.4,
+      "p99_ms": 98.6,
+      "max_ms": 104.3
     },
     "cumple": true
   }

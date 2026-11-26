@@ -28,9 +28,8 @@ Tip: `python simulator/simulador.py ... --escenario ph_alto --ciclos 2` deja una
   `del corte.txt` → AB-003 se reconecta y **reenvía por lote** lo acumulado con su hora original: el histórico no pierde datos.
 - Un `corte.txt` vacío corta a todos los dispositivos.
 
-## Eliminar registros (borrado real)
-El botón **Eliminar** del CRUD ejecuta un `DELETE` en la base de datos (ya no es borrado lógico). Reglas:
-- Cultivo: se borra junto con sus registros de bitácora. Sensor: junto con sus mediciones y alertas. Dispositivo: junto con sus sensores, mediciones y alertas (su API Key deja de existir).
-- Usuario: se borra; la bitácora y alertas que gestionó se conservan con el usuario en blanco. No se puede eliminar al último Administrador ni al propio usuario.
-- Sistema: solo si no tiene cultivos ni dispositivos (409 con mensaje); sus umbrales se borran con él.
-- Comprobación en Cloud SQL Studio: `SELECT id, nombre FROM cultivo ORDER BY id DESC LIMIT 5;` → la fila eliminada ya no aparece.
+## Funciones agregadas tras la retroalimentación de la ES3
+- **Desactivar / Reactivar (activo/inactivo):** el botón del CRUD ya no borra: marca el registro como inactivo y conserva su historial. Con «Mostrar inactivos» aparece el botón **Reactivar** (`POST /{recurso}/{id}/activar`). Un usuario inactivo no puede iniciar sesión y un dispositivo inactivo no puede enviar mediciones.
+- **Encargado por cultivo:** pestaña **Cultivos**. El Supervisor y el Administrador eligen el encargado de cada cultivo (`PUT /cultivos/{id}/encargado`); el Encargado ve sus cultivos con «Solo mis cultivos». Cada cambio queda en la auditoría.
+- **Intentos de contraseña configurables:** Administración → **Seguridad**. El Administrador define los intentos permitidos (3 a 10) y los minutos de bloqueo; se guarda en la tabla `configuracion` y se aplica de inmediato.
+- **Comparación de encargados:** Informe de gestión, sección 6: cultivos a cargo, alertas atendidas y resueltas, % de resolución, tiempo medio de resolución y registros de bitácora por encargado.
